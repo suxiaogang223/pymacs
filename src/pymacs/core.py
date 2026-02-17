@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Callable
 from importlib.util import module_from_spec, spec_from_file_location
@@ -11,6 +12,7 @@ from .state import EditorState
 
 Command = Callable[..., object]
 Hook = Callable[..., object]
+logger = logging.getLogger(__name__)
 
 
 class Editor:
@@ -39,7 +41,10 @@ class Editor:
 
     def emit(self, event: str, *args: object) -> None:
         for fn in self._hooks.get(event, []):
-            fn(self, *args)
+            try:
+                fn(self, *args)
+            except Exception:
+                logger.exception("hook failed for event %s", event)
 
     def load_plugin(self, plugin_path: str) -> None:
         path = Path(plugin_path).expanduser().resolve()

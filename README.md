@@ -13,11 +13,20 @@ The core target is runtime extensibility:
 
 ```bash
 cd /Users/xiaogangsu/code/pymacs
-python -m pymacs.cli
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+pymacs
+```
+
+For source-only development (without install):
+
+```bash
+cd /Users/xiaogangsu/code/pymacs
+PYTHONPATH=src python3 -m pymacs.cli
 ```
 
 ## Config
 
 1. Config directory: `~/.pymacs`
 2. Init file: `~/.pymacs/init.py`
-
