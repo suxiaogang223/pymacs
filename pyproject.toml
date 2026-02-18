@@ -4,13 +4,13 @@ version = "0.1.0"
 description = "PyMACS — Python Modular Adaptive Command System"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["textual>=0.58,<1"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
-pymacs = "pymacs.cli:main"
+pymacs = "pymacs.main:main"
 
 [build-system]
 requires = ["hatchling>=1.24.0"]

@@ -58,28 +58,23 @@ Single source of truth:
 3. Hook registration/emission.
 4. Plugin file loading.
 
-### M2: Interactive Shell (done)
+### M2: Interactive Shell (retired)
 
-1. Minimal REPL loop.
-2. Built-in commands:
-   - `new-buffer`
-   - `switch-buffer`
-   - `insert`
-   - `show-buffer`
-   - `set`
-   - `get`
+1. A minimal REPL shell was delivered as an early development interface.
+2. It has been removed in favor of a single default TUI entrypoint in M4.
 
-### M3: Keymap and Input Model (current)
+### M3: Keymap and Input Model (done)
 
 1. Key sequence parser.
 2. Keymap layering (global + buffer-local + mode-local).
 3. `command_execute` path.
 
-### M4: UI Layer
+### M4: UI Layer (current)
 
 1. TUI prototype (Textual) first.
 2. Optional GUI path (PySide6).
 3. Rendering separated from editor core.
+4. Current scope: single-buffer TUI, status line, minibuffer command input.
 
 ## 5. Extension Contract (v0)
 

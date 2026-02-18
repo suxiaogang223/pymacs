@@ -19,11 +19,17 @@ pip install -e .
 pymacs
 ```
 
+`pymacs` now starts the Textual TUI by default.
+
+- `M-x`: open minibuffer command input
+- `C-g` or `Esc`: cancel minibuffer
+- `C-q`: quit TUI
+
 For source-only development (without install):
 
 ```bash
 cd /Users/xiaogangsu/code/pymacs
-PYTHONPATH=src python3 -m pymacs.cli
+PYTHONPATH=src python3 -m pymacs.main
 ```
 
 ## Config

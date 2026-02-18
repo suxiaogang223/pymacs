@@ -2,13 +2,13 @@ from pathlib import Path
 
 import pytest
 
+from pymacs.commands import register_builtin_commands
 from pymacs.core import Editor
-from pymacs.cli import _register_builtin_commands
 
 
 def test_builtin_commands_smoke() -> None:
     editor = Editor()
-    _register_builtin_commands(editor)
+    register_builtin_commands(editor)
 
     editor.run("new-buffer", "notes")
     editor.run("switch-buffer", "notes")
