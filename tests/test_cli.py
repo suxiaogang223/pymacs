@@ -14,6 +14,8 @@ def test_shell_help_and_quit(monkeypatch, capsys) -> None:
     out = _run_shell(monkeypatch, capsys, [":help", ":quit"])
     assert "PyMACS shell. Type: :help" in out
     assert ":run <cmd> [args...]" in out
+    assert ":bind <key> <cmd> [scope]" in out
+    assert ":press <key> [args...]" in out
 
 
 def test_shell_run_with_quoted_args(monkeypatch, capsys) -> None:
@@ -82,6 +84,39 @@ def test_shell_eval_success_path(monkeypatch, capsys) -> None:
     )
     assert "hi" in out
     assert "tmp" in out
+
+
+def test_shell_bind_and_press(monkeypatch, capsys) -> None:
+    out = _run_shell(
+        monkeypatch,
+        capsys,
+        [
+            ":run new-buffer notes",
+            ":run switch-buffer notes",
+            ":run insert hi",
+            ":bind C-p show-buffer",
+            ":press C-p",
+            ":quit",
+        ],
+    )
+    assert "bound C-p -> show-buffer (global)" in out
+    assert "hi" in out
+
+
+def test_shell_mode_commands(monkeypatch, capsys) -> None:
+    out = _run_shell(
+        monkeypatch,
+        capsys,
+        [
+            ":mode insert",
+            ":modes",
+            ":mode insert off",
+            ":quit",
+        ],
+    )
+    assert "mode insert: on" in out
+    assert "insert" in out
+    assert "mode insert: off" in out
 
 
 def test_shell_exits_on_eof(monkeypatch, capsys) -> None:

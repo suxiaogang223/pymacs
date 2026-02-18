@@ -8,6 +8,7 @@ from collections.abc import Callable
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
+from .keymap import KeySequenceInput, format_key_sequence, parse_key_sequence
 from .state import EditorState
 
 Command = Callable[..., object]
@@ -58,6 +59,79 @@ class Editor:
             raise TypeError(f"plugin {path} must define activate(editor)")
         activate(self)
         self._plugins[str(path)] = module
+
+    def bind_key(
+        self,
+        sequence: KeySequenceInput,
+        command_name: str,
+        *,
+        scope: str = "global",
+        buffer: str | None = None,
+        mode: str | None = None,
+    ) -> None:
+        if command_name not in self._commands:
+            raise KeyError(f"unknown command: {command_name}")
+
+        key = parse_key_sequence(sequence)
+
+        if scope == "global":
+            self.state.global_keymap[key] = command_name
+            return
+
+        if scope == "buffer":
+            target = buffer or self.state.current_buffer
+            self.state.buffer_keymaps.setdefault(target, {})[key] = command_name
+            return
+
+        if scope == "mode":
+            if not mode:
+                raise ValueError("mode name required for mode scope")
+            self.state.mode_keymaps.setdefault(mode, {})[key] = command_name
+            return
+
+        raise ValueError(f"unknown keymap scope: {scope}")
+
+    def enable_mode(self, mode: str, *, buffer: str | None = None) -> None:
+        target = buffer or self.state.current_buffer
+        modes = self.state.buffer_modes.setdefault(target, [])
+        if mode not in modes:
+            modes.append(mode)
+
+    def disable_mode(self, mode: str, *, buffer: str | None = None) -> None:
+        target = buffer or self.state.current_buffer
+        modes = self.state.buffer_modes.get(target)
+        if not modes:
+            return
+        if mode in modes:
+            modes.remove(mode)
+
+    def resolve_key(self, sequence: KeySequenceInput, *, buffer: str | None = None) -> str:
+        key = parse_key_sequence(sequence)
+        target = buffer or self.state.current_buffer
+
+        for mode in reversed(self.state.buffer_modes.get(target, [])):
+            command_name = self.state.mode_keymaps.get(mode, {}).get(key)
+            if command_name is not None:
+                return command_name
+
+        command_name = self.state.buffer_keymaps.get(target, {}).get(key)
+        if command_name is not None:
+            return command_name
+
+        command_name = self.state.global_keymap.get(key)
+        if command_name is not None:
+            return command_name
+
+        raise KeyError(f"unbound key sequence: {format_key_sequence(key)}")
+
+    def command_execute(
+        self,
+        sequence: KeySequenceInput,
+        *args: object,
+        buffer: str | None = None,
+    ) -> object:
+        command_name = self.resolve_key(sequence, buffer=buffer)
+        return self.run(command_name, *args)
 
     @property
     def commands(self) -> list[str]:

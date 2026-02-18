@@ -51,14 +51,14 @@ Single source of truth:
 
 ## 4. Milestones
 
-### M1: Kernel (current)
+### M1: Kernel (done)
 
 1. `EditorState` with buffers/options.
 2. Command registration/execution.
 3. Hook registration/emission.
 4. Plugin file loading.
 
-### M2: Interactive Shell
+### M2: Interactive Shell (done)
 
 1. Minimal REPL loop.
 2. Built-in commands:
@@ -69,11 +69,11 @@ Single source of truth:
    - `set`
    - `get`
 
-### M3: Keymap and Input Model
+### M3: Keymap and Input Model (current)
 
 1. Key sequence parser.
 2. Keymap layering (global + buffer-local + mode-local).
-3. `command-execute` path.
+3. `command_execute` path.
 
 ### M4: UI Layer
 
@@ -119,4 +119,3 @@ pymacs/
       core.py
       cli.py
 ```
-
