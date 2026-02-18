@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shlex
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..core import Editor
@@ -10,7 +11,7 @@ from ..keymap import KeySequence, format_key_sequence, parse_key_sequence
 
 DEFAULT_EDIT_BINDINGS: tuple[tuple[str, str], ...] = (
     ("C-m", "newline"),
-    ("C-h", "delete-backward-char"),
+    ("DEL", "delete-backward-char"),
     ("C-d", "delete-forward-char"),
     ("C-f", "forward-char"),
     ("C-b", "backward-char"),
@@ -23,9 +24,14 @@ DEFAULT_EDIT_BINDINGS: tuple[tuple[str, str], ...] = (
 
 UI_ACTION_BINDINGS: dict[KeySequence, str] = {
     ("M-x",): "open-minibuffer",
-    ("C-g",): "cancel-minibuffer",
     ("C-q",): "quit",
     ("C-x", "C-c"): "quit",
+}
+
+HELP_PROMPT_BINDINGS: dict[str, tuple[str, str]] = {
+    "f": ("describe-command", "Describe command:"),
+    "k": ("describe-key", "Describe key:"),
+    "w": ("where-is", "Where is command:"),
 }
 
 
@@ -42,6 +48,14 @@ class UISnapshot:
     status: str
 
 
+@dataclass(frozen=True)
+class UIAction:
+    """UI actions consumed by the Textual layer."""
+
+    name: str
+    prompt: str | None = None
+
+
 class UIController:
     """Stateful adapter between UI events and editor core APIs."""
 
@@ -49,7 +63,8 @@ class UIController:
         self.editor = editor
         self._status = "ready"
         self._pending_keys: list[str] = []
-        self._ui_action: str | None = None
+        self._ui_action: UIAction | None = None
+        self._minibuffer_handler: Callable[[str], str] | None = None
         self._bind_default_edit_keys()
 
     def snapshot(self) -> UISnapshot:
@@ -88,6 +103,13 @@ class UIController:
             return self._set_status("buffer start")
         return self._set_status("backspace")
 
+    def handle_minibuffer_submit(self, line: str) -> str:
+        handler = self._minibuffer_handler
+        self._minibuffer_handler = None
+        if handler is not None:
+            return handler(line.strip())
+        return self.execute_minibuffer(line)
+
     def dispatch_key_chord(self, chord: str) -> str:
         try:
             sequence = parse_key_sequence(chord)
@@ -104,7 +126,7 @@ class UIController:
     def has_pending_keys(self) -> bool:
         return bool(self._pending_keys)
 
-    def pop_ui_action(self) -> str | None:
+    def pop_ui_action(self) -> UIAction | None:
         action = self._ui_action
         self._ui_action = None
         return action
@@ -149,7 +171,9 @@ class UIController:
             if cmd == "commands":
                 return self._set_status(" ".join(self.editor.commands))
             if cmd == "help":
-                return self._set_status("commands: run bind press mode modes buf commands help")
+                return self._set_status(
+                    "commands: run bind press mode modes buf commands help"
+                )
             return self._set_status(f"unknown command: {cmd}")
         except KeyError as exc:
             return self._set_status(exc.args[0])
@@ -161,16 +185,30 @@ class UIController:
     def _dispatch_single_key(self, key: str) -> str:
         if key == "C-g":
             self._pending_keys.clear()
-            self._ui_action = "cancel-minibuffer"
+            self._minibuffer_handler = None
+            self._ui_action = UIAction(name="cancel-minibuffer")
             return self._set_status("cancelled")
 
         candidate = tuple([*self._pending_keys, key])
         self._ui_action = None
 
+        if len(candidate) == 2 and candidate[0] == "C-h":
+            binding = HELP_PROMPT_BINDINGS.get(candidate[1])
+            if binding is None:
+                self._pending_keys.clear()
+                return self._set_status(
+                    f"unbound key sequence: {format_key_sequence(candidate)}"
+                )
+            command_name, prompt = binding
+            self._pending_keys.clear()
+            self._minibuffer_handler = self._build_help_handler(command_name)
+            self._ui_action = UIAction(name="open-minibuffer", prompt=prompt)
+            return self._set_status(prompt)
+
         action = UI_ACTION_BINDINGS.get(candidate)
         if action is not None:
             self._pending_keys.clear()
-            self._ui_action = action
+            self._ui_action = UIAction(name=action)
             return self._set_status(self._action_status(action))
 
         try:
@@ -189,6 +227,25 @@ class UIController:
 
         self._pending_keys.clear()
         return self._set_status(f"unbound key sequence: {format_key_sequence(candidate)}")
+
+    def _build_help_handler(self, command_name: str) -> Callable[[str], str]:
+        def _handler(raw_value: str) -> str:
+            value = raw_value.strip()
+            if not value:
+                return self._set_status(f"usage: {command_name} <arg>")
+            try:
+                result = self.editor.run(command_name, value)
+            except KeyError as exc:
+                return self._set_status(exc.args[0])
+            except ValueError as exc:
+                return self._set_status(str(exc))
+            except Exception as exc:
+                return self._set_status(f"command error: {exc}")
+            if result is None:
+                return self._set_status(f"ran {command_name}")
+            return self._set_status(str(result))
+
+        return _handler
 
     def _run_command(self, args: list[str]) -> str:
         if not args:
@@ -219,7 +276,9 @@ class UIController:
         if scope_spec.startswith("mode:"):
             mode = scope_spec.split(":", 1)[1]
             if not mode:
-                return self._set_status("usage: bind <key> <cmd> [global|buffer|mode:<name>]")
+                return self._set_status(
+                    "usage: bind <key> <cmd> [global|buffer|mode:<name>]"
+                )
             self.editor.bind_key(key, command_name, scope="mode", mode=mode)
             return self._set_status(f"bound {key} -> {command_name} (mode:{mode})")
 
@@ -265,9 +324,15 @@ class UIController:
 
     def _has_ui_prefix(self, sequence: KeySequence) -> bool:
         for bound in UI_ACTION_BINDINGS:
-            if len(bound) <= len(sequence):
-                continue
-            if bound[: len(sequence)] == sequence:
+            if len(bound) > len(sequence) and bound[: len(sequence)] == sequence:
+                return True
+
+        if ("C-h",)[: len(sequence)] == sequence and len(sequence) < 2:
+            return True
+
+        for subkey in HELP_PROMPT_BINDINGS:
+            bound = ("C-h", subkey)
+            if len(bound) > len(sequence) and bound[: len(sequence)] == sequence:
                 return True
         return False
 

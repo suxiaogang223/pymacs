@@ -11,6 +11,8 @@ from ..commands import register_builtin_commands
 from ..core import Editor
 from .controller import UIController
 
+DEFAULT_MINIBUFFER_PLACEHOLDER = "M-x command"
+
 
 def _key_to_sequence(key: str) -> str | None:
     parts = key.lower().split("+")
@@ -35,7 +37,7 @@ class BufferView(Static):
 
 
 class PyMACSTuiApp(App[None]):
-    """Core M4 Textual prototype."""
+    """Core Textual frontend for PyMACS."""
 
     CSS = """
     Screen {
@@ -75,7 +77,7 @@ class PyMACSTuiApp(App[None]):
     def compose(self) -> ComposeResult:
         yield BufferView(id="buffer")
         yield Static(id="status")
-        yield Input(placeholder="M-x command", id="minibuffer")
+        yield Input(placeholder=DEFAULT_MINIBUFFER_PLACEHOLDER, id="minibuffer")
 
     def on_mount(self) -> None:
         self._hide_minibuffer()
@@ -85,7 +87,7 @@ class PyMACSTuiApp(App[None]):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id != "minibuffer":
             return
-        self.controller.execute_minibuffer(event.value)
+        self.controller.handle_minibuffer_submit(event.value)
         self._hide_minibuffer()
         self._apply_ui_action()
         self._refresh_view()
@@ -108,7 +110,7 @@ class PyMACSTuiApp(App[None]):
             return
 
         if event.key == "backspace":
-            self.controller.dispatch_key_chord("C-h")
+            self.controller.dispatch_key_chord("DEL")
             self._apply_ui_action()
             self._refresh_view()
             event.stop()
@@ -131,14 +133,16 @@ class PyMACSTuiApp(App[None]):
             self._refresh_view()
             event.stop()
 
-    def _show_minibuffer(self) -> None:
+    def _show_minibuffer(self, prompt: str | None = None) -> None:
         minibuffer = self.query_one("#minibuffer", Input)
+        minibuffer.placeholder = prompt or DEFAULT_MINIBUFFER_PLACEHOLDER
         minibuffer.display = True
         minibuffer.value = ""
         minibuffer.focus()
 
     def _hide_minibuffer(self) -> None:
         minibuffer = self.query_one("#minibuffer", Input)
+        minibuffer.placeholder = DEFAULT_MINIBUFFER_PLACEHOLDER
         minibuffer.value = ""
         minibuffer.display = False
         self.query_one("#buffer", BufferView).focus()
@@ -147,13 +151,13 @@ class PyMACSTuiApp(App[None]):
         action = self.controller.pop_ui_action()
         if action is None:
             return
-        if action == "open-minibuffer":
-            self._show_minibuffer()
+        if action.name == "open-minibuffer":
+            self._show_minibuffer(action.prompt)
             return
-        if action == "cancel-minibuffer":
+        if action.name == "cancel-minibuffer":
             self._hide_minibuffer()
             return
-        if action == "quit":
+        if action.name == "quit":
             self._quit_requested = True
             self.exit()
 

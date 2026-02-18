@@ -67,3 +67,27 @@ def test_has_prefix_binding() -> None:
     assert editor.has_prefix_binding("C-x")
     assert not editor.has_prefix_binding("C-x C-c")
     assert not editor.has_prefix_binding("C-z")
+
+
+def test_describe_key_and_where_is_include_scope_metadata() -> None:
+    editor = Editor()
+    editor.command("echo", lambda _ed: None)
+
+    editor.bind_key("C-e", "echo", scope="global")
+    editor.bind_key("C-e", "echo", scope="buffer")
+    editor.bind_key("C-e", "echo", scope="mode", mode="insert")
+    editor.enable_mode("insert")
+
+    binding = editor.describe_key("C-e")
+    assert binding.command_name == "echo"
+    assert binding.scope == "mode"
+    assert binding.mode == "insert"
+
+    bindings = editor.where_is("echo")
+    assert [item.scope for item in bindings] == ["mode", "buffer", "global"]
+
+
+def test_where_is_rejects_unknown_command() -> None:
+    editor = Editor()
+    with pytest.raises(KeyError, match="unknown command"):
+        editor.where_is("not-found")

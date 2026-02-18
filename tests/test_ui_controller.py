@@ -43,21 +43,55 @@ def test_dispatch_key_chord_prefix_and_ui_actions() -> None:
 
     assert controller.dispatch_key_chord("C-c") == "quit requested"
     assert not controller.has_pending_keys()
-    assert controller.pop_ui_action() == "quit"
+    action = controller.pop_ui_action()
+    assert action is not None
+    assert action.name == "quit"
 
-    assert controller.dispatch_key_chord("M-x") == "open minibuffer"
-    assert controller.pop_ui_action() == "open-minibuffer"
+    controller.dispatch_key_chord("M-x")
+    action = controller.pop_ui_action()
+    assert action is not None
+    assert action.name == "open-minibuffer"
 
     assert controller.dispatch_key_chord("C-g") == "cancelled"
-    assert controller.pop_ui_action() == "cancel-minibuffer"
+    action = controller.pop_ui_action()
+    assert action is not None
+    assert action.name == "cancel-minibuffer"
 
 
-def test_dispatch_key_chord_clears_invalid_prefix() -> None:
+def test_help_prefix_flow_for_describe_command() -> None:
     controller = _new_controller()
 
-    assert controller.dispatch_key_chord("C-x") == "pending C-x"
-    assert controller.dispatch_key_chord("C-z") == "unbound key sequence: C-x C-z"
+    assert controller.dispatch_key_chord("C-h") == "pending C-h"
+    assert controller.has_pending_keys()
+    assert controller.dispatch_key_chord("f") == "Describe command:"
+
+    action = controller.pop_ui_action()
+    assert action is not None
+    assert action.name == "open-minibuffer"
+    assert action.prompt == "Describe command:"
+
+    assert controller.handle_minibuffer_submit("show-buffer") == "help: show-buffer"
+    assert controller.snapshot().current_buffer == "*Help*"
+    assert "show-buffer" in controller.snapshot().text
+
+
+def test_help_prefix_rejects_unknown_subcommand() -> None:
+    controller = _new_controller()
+
+    assert controller.dispatch_key_chord("C-h") == "pending C-h"
+    assert controller.dispatch_key_chord("z") == "unbound key sequence: C-h z"
     assert not controller.has_pending_keys()
+
+
+def test_del_is_backspace_and_c_h_is_help_prefix() -> None:
+    controller = _new_controller()
+
+    controller.handle_text_input("ab")
+    assert controller.dispatch_key_chord("DEL") == "executed del"
+    assert controller.snapshot().text == "a"
+
+    assert controller.dispatch_key_chord("C-h") == "pending C-h"
+    assert controller.snapshot().text == "a"
 
 
 def test_execute_minibuffer_happy_paths() -> None:

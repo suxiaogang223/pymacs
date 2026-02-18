@@ -78,6 +78,14 @@ Single source of truth:
 3. Textual rendering reads immutable UI snapshots instead of touching `EditorState` directly.
 4. Delivered scope: single-buffer TUI, status line, minibuffer command input, Emacs-style baseline keybindings.
 
+### M5: Command Metadata and Help System (current)
+
+1. Commands are self-documenting via docstring + runtime introspection.
+2. `Editor` exposes query APIs: command metadata, key description, and where-is lookup.
+3. Built-in help commands: `describe-command`, `describe-key`, `where-is`.
+4. Emacs-style help prefix in TUI: `C-h f`, `C-h k`, `C-h w`.
+5. Python remains the extension language for user config and plugins.
+
 ## 5. Extension Contract (v0)
 
 A plugin must implement:
@@ -116,7 +124,10 @@ pymacs/
       state.py
       core.py
       keymap.py
-      commands.py
+      commands/
+        __init__.py
+        editing.py
+        help.py
       tui.py
       ui/
         app.py

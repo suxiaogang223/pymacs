@@ -34,9 +34,12 @@ Current default bindings include:
 - `C-f` / `C-b`: forward/backward char
 - `C-a` / `C-e`: beginning/end of line
 - `C-n` / `C-p`: next/previous line
-- `C-d` / `C-h`: delete forward/backward char
+- `C-d` / `DEL`: delete forward/backward char
 - `C-k`: kill line
 - `M-x`: minibuffer command input
+- `C-h f`: describe command
+- `C-h k`: describe key
+- `C-h w`: where-is (find bindings for command)
 - `C-x C-c` or `C-q`: quit
 
 ## Runtime Layers
@@ -48,6 +51,22 @@ PyMACS TUI now uses a strict three-layer boundary:
 3. Textual App (`src/pymacs/ui/app.py`): widgets, focus, rendering, and platform event handling.
 
 The Textual App does not read `EditorState` directly. Rendering data comes from `UIController.snapshot()`.
+
+## Command Metadata and Help
+
+PyMACS commands are self-documenting by default:
+
+1. `Editor.command(name, fn)` stores command metadata at registration time.
+2. Metadata includes command docstring, Python signature, module, and source kind (`builtin` / `plugin` / `runtime`).
+3. Plugins loaded from `~/.pymacs/init.py` or explicit plugin files automatically register commands as `plugin` source.
+
+Help commands render to `*Help*` buffer:
+
+1. `describe-command`
+2. `describe-key`
+3. `where-is`
+
+Use `C-h` as the help prefix in TUI for interactive help prompts.
 
 For source-only development (without install):
 

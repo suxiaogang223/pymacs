@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -15,25 +17,75 @@ Command = Callable[..., object]
 Hook = Callable[..., object]
 logger = logging.getLogger(__name__)
 
+_SOURCE_KINDS = {"builtin", "plugin", "runtime"}
+
+
+@dataclass(frozen=True)
+class CommandInfo:
+    """Command registration metadata."""
+
+    name: str
+    fn: Command
+    doc: str
+    signature: str
+    module: str
+    source_kind: str
+
+
+@dataclass(frozen=True)
+class KeyBindingInfo:
+    """Resolved key binding metadata."""
+
+    sequence: KeySequence
+    command_name: str
+    scope: str
+    buffer: str | None = None
+    mode: str | None = None
+
 
 class Editor:
     """Live editor runtime with command/hook/plugin APIs."""
 
     def __init__(self) -> None:
         self.state = EditorState()
-        self._commands: dict[str, Command] = {}
+        self._commands: dict[str, CommandInfo] = {}
         self._hooks: dict[str, list[Hook]] = defaultdict(list)
         self._plugins: dict[str, object] = {}
+        self._registration_source_kind = "runtime"
 
-    def command(self, name: str, fn: Command) -> None:
-        self._commands[name] = fn
+    def command(self, name: str, fn: Command, *, source_kind: str | None = None) -> None:
+        kind = self._normalize_source_kind(source_kind or self._registration_source_kind)
+        doc = inspect.getdoc(fn) or "(undocumented command)"
+        module_name = str(getattr(fn, "__module__", ""))
+        try:
+            signature = str(inspect.signature(fn))
+        except (TypeError, ValueError):
+            signature = "(...)"
+
+        self._commands[name] = CommandInfo(
+            name=name,
+            fn=fn,
+            doc=doc,
+            signature=signature,
+            module=module_name,
+            source_kind=kind,
+        )
+
+    def get_command_info(self, name: str) -> CommandInfo:
+        command = self._commands.get(name)
+        if command is None:
+            raise KeyError(f"unknown command: {name}")
+        return command
+
+    def command_infos(self) -> list[CommandInfo]:
+        return [self._commands[name] for name in self.commands]
 
     def run(self, name: str, *args: object) -> object:
-        cmd = self._commands.get(name)
-        if cmd is None:
+        info = self._commands.get(name)
+        if info is None:
             raise KeyError(f"unknown command: {name}")
         self.emit("before-command", name, args)
-        result = cmd(self, *args)
+        result = info.fn(self, *args)
         self.emit("after-command", name, args, result)
         return result
 
@@ -57,7 +109,13 @@ class Editor:
         activate = getattr(module, "activate", None)
         if not callable(activate):
             raise TypeError(f"plugin {path} must define activate(editor)")
-        activate(self)
+
+        previous_source_kind = self._registration_source_kind
+        self._registration_source_kind = "plugin"
+        try:
+            activate(self)
+        finally:
+            self._registration_source_kind = previous_source_kind
         self._plugins[str(path)] = module
 
     def bind_key(
@@ -106,21 +164,54 @@ class Editor:
             modes.remove(mode)
 
     def resolve_key(self, sequence: KeySequenceInput, *, buffer: str | None = None) -> str:
+        return self.describe_key(sequence, buffer=buffer).command_name
+
+    def describe_key(self, sequence: KeySequenceInput, *, buffer: str | None = None) -> KeyBindingInfo:
         key = parse_key_sequence(sequence)
         target = buffer or self.state.current_buffer
 
-        for keymap in self._active_keymaps(target):
+        for scope, mode_name, target_buffer, keymap in self._active_keymaps(target):
             command_name = keymap.get(key)
-            if command_name is not None:
-                return command_name
+            if command_name is None:
+                continue
+            return KeyBindingInfo(
+                sequence=key,
+                command_name=command_name,
+                scope=scope,
+                buffer=target_buffer,
+                mode=mode_name,
+            )
 
         raise KeyError(f"unbound key sequence: {format_key_sequence(key)}")
+
+    def where_is(self, name: str, *, buffer: str | None = None) -> list[KeyBindingInfo]:
+        if name not in self._commands:
+            raise KeyError(f"unknown command: {name}")
+
+        target = buffer or self.state.current_buffer
+        bindings: list[KeyBindingInfo] = []
+
+        for scope, mode_name, target_buffer, keymap in self._active_keymaps(target):
+            for sequence, command_name in sorted(keymap.items(), key=lambda item: item[0]):
+                if command_name != name:
+                    continue
+                bindings.append(
+                    KeyBindingInfo(
+                        sequence=sequence,
+                        command_name=command_name,
+                        scope=scope,
+                        buffer=target_buffer,
+                        mode=mode_name,
+                    )
+                )
+
+        return bindings
 
     def has_prefix_binding(self, sequence: KeySequenceInput, *, buffer: str | None = None) -> bool:
         key = parse_key_sequence(sequence)
         target = buffer or self.state.current_buffer
 
-        for keymap in self._active_keymaps(target):
+        for _scope, _mode_name, _target_buffer, keymap in self._active_keymaps(target):
             for bound_sequence in keymap:
                 if len(bound_sequence) <= len(key):
                     continue
@@ -141,10 +232,17 @@ class Editor:
     def commands(self) -> list[str]:
         return sorted(self._commands)
 
-    def _active_keymaps(self, buffer: str) -> list[dict[KeySequence, str]]:
-        keymaps: list[dict[KeySequence, str]] = []
-        for mode in reversed(self.state.buffer_modes.get(buffer, [])):
-            keymaps.append(self.state.mode_keymaps.get(mode, {}))
-        keymaps.append(self.state.buffer_keymaps.get(buffer, {}))
-        keymaps.append(self.state.global_keymap)
-        return keymaps
+    def _active_keymaps(self, buffer: str) -> list[tuple[str, str | None, str | None, dict[KeySequence, str]]]:
+        active: list[tuple[str, str | None, str | None, dict[KeySequence, str]]] = []
+
+        for mode_name in reversed(self.state.buffer_modes.get(buffer, [])):
+            active.append(("mode", mode_name, buffer, self.state.mode_keymaps.get(mode_name, {})))
+
+        active.append(("buffer", None, buffer, self.state.buffer_keymaps.get(buffer, {})))
+        active.append(("global", None, None, self.state.global_keymap))
+        return active
+
+    def _normalize_source_kind(self, source_kind: str) -> str:
+        if source_kind in _SOURCE_KINDS:
+            return source_kind
+        return "runtime"

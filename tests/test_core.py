@@ -17,6 +17,24 @@ def test_builtin_commands_smoke() -> None:
 
     editor.run("set", "theme", "dark")
     assert editor.run("get", "theme") == "dark"
+    assert editor.get_command_info("insert").source_kind == "builtin"
+
+
+def test_runtime_command_metadata() -> None:
+    editor = Editor()
+
+    def echo_value(_ed: Editor, value: str) -> str:
+        """Return VALUE as a string."""
+        return value
+
+    editor.command("echo-value", echo_value)
+
+    info = editor.get_command_info("echo-value")
+    assert info.name == "echo-value"
+    assert info.doc == "Return VALUE as a string."
+    assert "value: str" in info.signature
+    assert info.source_kind == "runtime"
+    assert any(command.name == "echo-value" for command in editor.command_infos())
 
 
 def test_emacs_style_cursor_editing_commands() -> None:
@@ -77,6 +95,7 @@ def test_load_plugin_registers_command(tmp_path: Path) -> None:
     plugin.write_text(
         "def activate(editor):\n"
         "    def ping(ed):\n"
+        "        '''Return pong from plugin.'''\n"
         "        return 'pong'\n"
         "    editor.command('ping', ping)\n",
         encoding="utf-8",
@@ -85,6 +104,9 @@ def test_load_plugin_registers_command(tmp_path: Path) -> None:
     editor = Editor()
     editor.load_plugin(str(plugin))
     assert editor.run("ping") == "pong"
+    info = editor.get_command_info("ping")
+    assert info.source_kind == "plugin"
+    assert "plugin" in info.doc
 
 
 def test_load_plugin_requires_activate(tmp_path: Path) -> None:

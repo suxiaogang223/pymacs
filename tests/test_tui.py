@@ -55,10 +55,12 @@ def test_tui_has_emacs_default_bindings() -> None:
     assert app.editor.resolve_key("C-a") == "move-beginning-of-line"
     assert app.editor.resolve_key("C-e") == "move-end-of-line"
     assert app.editor.resolve_key("C-k") == "kill-line"
+    assert app.editor.resolve_key("DEL") == "delete-backward-char"
+
+    with pytest.raises(KeyError, match="unbound key sequence"):
+        app.editor.resolve_key("C-h")
     with pytest.raises(KeyError, match="unbound key sequence"):
         app.editor.resolve_key("C-q")
-    with pytest.raises(KeyError, match="unbound key sequence"):
-        app.editor.resolve_key("C-x C-c")
 
 
 def test_tui_ctrl_q_requests_quit() -> None:
@@ -85,39 +87,77 @@ def test_tui_ctrl_x_ctrl_c_requests_quit() -> None:
     asyncio.run(scenario())
 
 
-def test_tui_minibuffer_open_and_cancel() -> None:
+def test_tui_help_describe_command_via_c_h_f() -> None:
     async def scenario() -> None:
         app = PyMACSTuiApp()
         async with app.run_test() as pilot:
+            await pilot.press("ctrl+h", "f")
+            await pilot.pause()
             minibuffer = app.query_one("#minibuffer", Input)
-            assert not minibuffer.display
-
-            await pilot.press("alt+x")
-            await pilot.pause()
             assert minibuffer.display
+            assert minibuffer.placeholder == "Describe command:"
 
-            await pilot.press("ctrl+g")
+            minibuffer.value = "show-buffer"
+            await pilot.press("enter")
             await pilot.pause()
-            assert not minibuffer.display
+
+            status = _plain_text(app.query_one("#status", Static))
+            assert "*Help*" in status
+            assert "help: show-buffer" in status
+            assert "show-buffer" in _plain_text(app.query_one("#buffer", Static))
 
     asyncio.run(scenario())
 
 
-def test_tui_routes_control_keys_to_controller_dispatch() -> None:
+def test_tui_help_describe_key_via_c_h_k() -> None:
     async def scenario() -> None:
         app = PyMACSTuiApp()
-        seen: list[str] = []
-        original = app.controller.dispatch_key_chord
-
-        def wrapped(chord: str) -> str:
-            seen.append(chord)
-            return original(chord)
-
-        app.controller.dispatch_key_chord = wrapped
         async with app.run_test() as pilot:
-            await pilot.press("ctrl+f", "ctrl+b")
+            await pilot.press("ctrl+h", "k")
+            await pilot.pause()
+            minibuffer = app.query_one("#minibuffer", Input)
+            assert minibuffer.display
+            assert minibuffer.placeholder == "Describe key:"
+
+            minibuffer.value = "C-f"
+            await pilot.press("enter")
             await pilot.pause()
 
-        assert seen[:2] == ["C-f", "C-b"]
+            help_text = _plain_text(app.query_one("#buffer", Static))
+            assert "C-f" in help_text
+            assert "forward-char" in help_text
+
+    asyncio.run(scenario())
+
+
+def test_tui_help_where_is_via_c_h_w() -> None:
+    async def scenario() -> None:
+        app = PyMACSTuiApp()
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+h", "w")
+            await pilot.pause()
+            minibuffer = app.query_one("#minibuffer", Input)
+            assert minibuffer.display
+            assert minibuffer.placeholder == "Where is command:"
+
+            minibuffer.value = "forward-char"
+            await pilot.press("enter")
+            await pilot.pause()
+
+            help_text = _plain_text(app.query_one("#buffer", Static))
+            assert "forward-char" in help_text
+            assert "C-f" in help_text
+
+    asyncio.run(scenario())
+
+
+def test_tui_backspace_routes_to_del_binding() -> None:
+    async def scenario() -> None:
+        app = PyMACSTuiApp()
+        async with app.run_test() as pilot:
+            await pilot.press("h", "i")
+            await pilot.press("backspace")
+            await pilot.pause()
+            assert _plain_text(app.query_one("#buffer", Static)) == "h|"
 
     asyncio.run(scenario())
