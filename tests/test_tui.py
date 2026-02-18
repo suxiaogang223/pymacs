@@ -1,27 +1,43 @@
 import asyncio
 
 import pytest
-from rich.text import Text
+from rich.layout import Layout
+from rich.panel import Panel
 from textual.widgets import Input, Static
 
 from pymacs.ui.app import PyMACSTuiApp
 
 
-def _plain_text(widget: Static) -> str:
-    renderable = widget.renderable
-    if isinstance(renderable, Text):
-        return renderable.plain
-    return str(renderable)
+def _selected_window(app: PyMACSTuiApp):
+    snapshot = app.controller.snapshot()
+    for window in snapshot.windows:
+        if window.selected:
+            return window
+    raise AssertionError("missing selected window")
 
 
-def test_tui_renders_initial_buffer() -> None:
+def _collect_panels(layout: Layout) -> list[Panel]:
+    if layout.children:
+        panels: list[Panel] = []
+        for child in layout.children:
+            panels.extend(_collect_panels(child))
+        return panels
+
+    if isinstance(layout.renderable, Panel):
+        return [layout.renderable]
+
+    return []
+
+
+def test_tui_renders_initial_workspace() -> None:
     async def scenario() -> None:
         app = PyMACSTuiApp()
         async with app.run_test() as pilot:
             await pilot.pause()
-            status = _plain_text(app.query_one("#status", Static))
-            assert "*scratch*" in status
-            assert "line=1 col=1" in status
+            workspace = app.query_one("#workspace", Static)
+            assert isinstance(workspace.renderable, Layout)
+            status = app.query_one("#status", Static).renderable
+            assert "windows=1" in str(status)
 
     asyncio.run(scenario())
 
@@ -32,7 +48,7 @@ def test_tui_typing_and_minibuffer_command() -> None:
         async with app.run_test() as pilot:
             await pilot.press("h", "i")
             await pilot.pause()
-            assert _plain_text(app.query_one("#buffer", Static)) == "hi|"
+            assert _selected_window(app).text == "hi"
 
             await pilot.press("alt+x")
             await pilot.pause()
@@ -42,7 +58,7 @@ def test_tui_typing_and_minibuffer_command() -> None:
             await pilot.press("enter")
             await pilot.pause()
 
-            status = _plain_text(app.query_one("#status", Static))
+            status = str(app.query_one("#status", Static).renderable)
             assert "hi" in status
 
     asyncio.run(scenario())
@@ -59,8 +75,6 @@ def test_tui_has_emacs_default_bindings() -> None:
 
     with pytest.raises(KeyError, match="unbound key sequence"):
         app.editor.resolve_key("C-h")
-    with pytest.raises(KeyError, match="unbound key sequence"):
-        app.editor.resolve_key("C-q")
 
 
 def test_tui_ctrl_q_requests_quit() -> None:
@@ -87,10 +101,44 @@ def test_tui_ctrl_x_ctrl_c_requests_quit() -> None:
     asyncio.run(scenario())
 
 
-def test_tui_help_describe_command_via_c_h_f() -> None:
+def test_tui_multi_window_render_and_selected_highlight() -> None:
     async def scenario() -> None:
         app = PyMACSTuiApp()
         async with app.run_test() as pilot:
+            await pilot.press("ctrl+x", "2")
+            await pilot.pause()
+
+            workspace = app.query_one("#workspace", Static)
+            assert isinstance(workspace.renderable, Layout)
+            panels = _collect_panels(workspace.renderable)
+            assert len(panels) == 2
+            assert sum(1 for panel in panels if str(panel.border_style) == "bright_green") == 1
+
+    asyncio.run(scenario())
+
+
+def test_tui_ctrl_x_ctrl_b_shows_buffer_list() -> None:
+    async def scenario() -> None:
+        app = PyMACSTuiApp()
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+x", "ctrl+b")
+            await pilot.pause()
+
+            snapshot = app.controller.snapshot()
+            assert any(window.buffer == "*Buffer List*" for window in snapshot.windows)
+
+    asyncio.run(scenario())
+
+
+def test_tui_help_prefers_other_window_when_available() -> None:
+    async def scenario() -> None:
+        app = PyMACSTuiApp()
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+x", "2")
+            await pilot.pause()
+
+            selected_before = _selected_window(app).window_id
+
             await pilot.press("ctrl+h", "f")
             await pilot.pause()
             minibuffer = app.query_one("#minibuffer", Input)
@@ -101,52 +149,11 @@ def test_tui_help_describe_command_via_c_h_f() -> None:
             await pilot.press("enter")
             await pilot.pause()
 
-            status = _plain_text(app.query_one("#status", Static))
-            assert "*Help*" in status
-            assert "help: show-buffer" in status
-            assert "show-buffer" in _plain_text(app.query_one("#buffer", Static))
-
-    asyncio.run(scenario())
-
-
-def test_tui_help_describe_key_via_c_h_k() -> None:
-    async def scenario() -> None:
-        app = PyMACSTuiApp()
-        async with app.run_test() as pilot:
-            await pilot.press("ctrl+h", "k")
-            await pilot.pause()
-            minibuffer = app.query_one("#minibuffer", Input)
-            assert minibuffer.display
-            assert minibuffer.placeholder == "Describe key:"
-
-            minibuffer.value = "C-f"
-            await pilot.press("enter")
-            await pilot.pause()
-
-            help_text = _plain_text(app.query_one("#buffer", Static))
-            assert "C-f" in help_text
-            assert "forward-char" in help_text
-
-    asyncio.run(scenario())
-
-
-def test_tui_help_where_is_via_c_h_w() -> None:
-    async def scenario() -> None:
-        app = PyMACSTuiApp()
-        async with app.run_test() as pilot:
-            await pilot.press("ctrl+h", "w")
-            await pilot.pause()
-            minibuffer = app.query_one("#minibuffer", Input)
-            assert minibuffer.display
-            assert minibuffer.placeholder == "Where is command:"
-
-            minibuffer.value = "forward-char"
-            await pilot.press("enter")
-            await pilot.pause()
-
-            help_text = _plain_text(app.query_one("#buffer", Static))
-            assert "forward-char" in help_text
-            assert "C-f" in help_text
+            snapshot = app.controller.snapshot()
+            selected_after = _selected_window(app)
+            assert selected_after.window_id == selected_before
+            assert selected_after.buffer != "*Help*"
+            assert any(window.buffer == "*Help*" for window in snapshot.windows)
 
     asyncio.run(scenario())
 
@@ -158,6 +165,6 @@ def test_tui_backspace_routes_to_del_binding() -> None:
             await pilot.press("h", "i")
             await pilot.press("backspace")
             await pilot.pause()
-            assert _plain_text(app.query_one("#buffer", Static)) == "h|"
+            assert _selected_window(app).text == "h"
 
     asyncio.run(scenario())

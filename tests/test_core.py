@@ -10,8 +10,7 @@ def test_builtin_commands_smoke() -> None:
     editor = Editor()
     register_builtin_commands(editor)
 
-    editor.run("new-buffer", "notes")
-    editor.run("switch-buffer", "notes")
+    editor.run("switch-to-buffer", "notes")
     editor.run("insert", "hello", "world")
     assert editor.run("show-buffer") == "hello world"
 
@@ -73,6 +72,71 @@ def test_line_navigation_and_kill_line() -> None:
     assert editor.run("show-buffer") == "ab"
 
 
+def test_window_split_and_navigation() -> None:
+    editor = Editor()
+    register_builtin_commands(editor)
+
+    assert editor.window_list() == [1]
+
+    editor.run("switch-to-buffer", "notes")
+    editor.run("split-window-right")
+    windows = editor.window_list()
+    assert len(windows) == 2
+    assert editor.selected_window_id == windows[0]
+
+    editor.run("other-window")
+    assert editor.selected_window_id == windows[1]
+
+    editor.run("switch-to-buffer", "docs")
+    assert editor.window_buffer(windows[1]) == "docs"
+
+    editor.run("delete-other-windows")
+    assert editor.window_list() == [windows[1]]
+
+
+def test_window_local_point_memory() -> None:
+    editor = Editor()
+    register_builtin_commands(editor)
+
+    editor.run("switch-to-buffer", "notes")
+    editor.run("insert", "abcdef")
+    window_a = editor.selected_window_id
+
+    editor.run("split-window-below")
+    window_b = [wid for wid in editor.window_list() if wid != window_a][0]
+
+    editor.run("other-window")
+    assert editor.selected_window_id == window_b
+    editor.run("move-beginning-of-line")
+    assert editor.state.window_cursor(window_b) == 0
+
+    editor.run("other-window")
+    assert editor.selected_window_id == window_a
+    assert editor.state.window_cursor(window_a) == 6
+
+
+def test_kill_buffer_falls_back_to_recent_buffer() -> None:
+    editor = Editor()
+    register_builtin_commands(editor)
+
+    editor.run("switch-to-buffer", "a")
+    editor.run("split-window-right")
+    first_window, second_window = editor.window_list()
+
+    editor.run("other-window")
+    assert editor.selected_window_id == second_window
+    editor.run("switch-to-buffer", "b")
+
+    editor.run("other-window")
+    assert editor.selected_window_id == first_window
+    assert editor.window_buffer(first_window) == "a"
+
+    status = editor.run("kill-buffer", "a")
+    assert isinstance(status, str)
+    assert "killed a" in status
+    assert editor.window_buffer(first_window) == "b"
+
+
 def test_hook_failure_isolated(caplog: pytest.LogCaptureFixture) -> None:
     editor = Editor()
 
@@ -104,6 +168,7 @@ def test_load_plugin_registers_command(tmp_path: Path) -> None:
     editor = Editor()
     editor.load_plugin(str(plugin))
     assert editor.run("ping") == "pong"
+
     info = editor.get_command_info("ping")
     assert info.source_kind == "plugin"
     assert "plugin" in info.doc

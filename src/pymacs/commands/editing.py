@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from ..core import Editor
 
+BUFFER_LIST_NAME = "*Buffer List*"
+
 
 def register_editing_commands(editor: Editor) -> None:
     """Register core editing/state commands."""
@@ -22,17 +24,51 @@ def register_editing_commands(editor: Editor) -> None:
         ed.state.set_current_text(current[:cursor] + text + current[cursor:])
         ed.state.set_current_cursor(cursor + len(text))
 
-    def new_buffer(ed: Editor, name: str) -> None:
-        """Create a buffer if it does not exist."""
-        ed.state.buffers.setdefault(name, "")
-        ed.state.cursors.setdefault(name, 0)
+    def switch_to_buffer(ed: Editor, name: str) -> None:
+        """Switch selected window to buffer NAME, creating buffer if needed."""
+        target = str(name).strip()
+        if not target:
+            raise ValueError("usage: switch-to-buffer <name>")
+        ed.state.set_selected_buffer(target)
 
-    def switch_buffer(ed: Editor, name: str) -> None:
-        """Switch the current buffer to NAME, creating it if needed."""
-        if name not in ed.state.buffers:
-            ed.state.buffers[name] = ""
-        ed.state.cursors.setdefault(name, len(ed.state.buffers[name]))
-        ed.state.current_buffer = name
+    def list_buffers(ed: Editor) -> str:
+        """Show a read-only list of buffers."""
+        lines = ["Buffers", "", "* marks current buffer", ""]
+        current = ed.state.selected_buffer()
+        for name in sorted(ed.state.buffers):
+            marker = "*" if name == current else " "
+            lines.append(f"{marker} {name:<20} {len(ed.state.buffers[name])} chars")
+
+        ed.state.buffers[BUFFER_LIST_NAME] = "\n".join(lines)
+        ed.state.mark_buffer_recent(BUFFER_LIST_NAME)
+        ed.pop_to_buffer(BUFFER_LIST_NAME, prefer_other=True)
+        return "buffer list"
+
+    def kill_buffer(ed: Editor, *parts: object) -> str:
+        """Kill buffer NAME, or current buffer when NAME is omitted."""
+        target = " ".join(str(part) for part in parts).strip() or ed.state.selected_buffer()
+        replacement = ed.state.kill_buffer(target)
+        return f"killed {target} -> {replacement}"
+
+    def split_window_below(ed: Editor) -> None:
+        """Split selected window into upper/lower windows."""
+        ed.split_window_below()
+
+    def split_window_right(ed: Editor) -> None:
+        """Split selected window into left/right windows."""
+        ed.split_window_right()
+
+    def other_window(ed: Editor) -> None:
+        """Select the next window in layout traversal order."""
+        ed.other_window()
+
+    def delete_window(ed: Editor) -> None:
+        """Delete the selected window."""
+        ed.delete_window()
+
+    def delete_other_windows(ed: Editor) -> None:
+        """Delete all windows except the selected one."""
+        ed.delete_other_windows()
 
     def insert(ed: Editor, *parts: object) -> None:
         """Insert text at point."""
@@ -141,7 +177,7 @@ def register_editing_commands(editor: Editor) -> None:
         ed.state.set_current_cursor(cursor)
 
     def show_buffer(ed: Editor) -> str:
-        """Return current buffer contents."""
+        """Return selected window buffer contents."""
         return ed.state.current_text()
 
     def set_var(ed: Editor, key: str, *value: object) -> None:
@@ -152,8 +188,16 @@ def register_editing_commands(editor: Editor) -> None:
         """Get variable KEY from editor state."""
         return ed.state.variables.get(key)
 
-    editor.command("new-buffer", new_buffer, source_kind="builtin")
-    editor.command("switch-buffer", switch_buffer, source_kind="builtin")
+    editor.command("switch-to-buffer", switch_to_buffer, source_kind="builtin")
+    editor.command("list-buffers", list_buffers, source_kind="builtin")
+    editor.command("kill-buffer", kill_buffer, source_kind="builtin")
+
+    editor.command("split-window-below", split_window_below, source_kind="builtin")
+    editor.command("split-window-right", split_window_right, source_kind="builtin")
+    editor.command("other-window", other_window, source_kind="builtin")
+    editor.command("delete-window", delete_window, source_kind="builtin")
+    editor.command("delete-other-windows", delete_other_windows, source_kind="builtin")
+
     editor.command("insert", insert, source_kind="builtin")
     editor.command("newline", newline, source_kind="builtin")
     editor.command("forward-char", forward_char, source_kind="builtin")

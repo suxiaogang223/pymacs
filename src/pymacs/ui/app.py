@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from rich.layout import Layout
+from rich.panel import Panel
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.events import Key
@@ -9,7 +11,7 @@ from textual.widgets import Input, Static
 
 from ..commands import register_builtin_commands
 from ..core import Editor
-from .controller import UIController
+from .controller import LayoutSnapshot, UIController, WindowSnapshot
 
 DEFAULT_MINIBUFFER_PLACEHOLDER = "M-x command"
 
@@ -32,7 +34,7 @@ def _key_to_sequence(key: str) -> str | None:
     return "-".join([*mods, base])
 
 
-class BufferView(Static):
+class WorkspaceView(Static):
     can_focus = True
 
 
@@ -44,10 +46,10 @@ class PyMACSTuiApp(App[None]):
         layout: vertical;
     }
 
-    #buffer {
+    #workspace {
         height: 1fr;
         border: round $accent;
-        padding: 1 2;
+        padding: 0;
     }
 
     #status {
@@ -75,13 +77,13 @@ class PyMACSTuiApp(App[None]):
         return self._quit_requested
 
     def compose(self) -> ComposeResult:
-        yield BufferView(id="buffer")
+        yield WorkspaceView(id="workspace")
         yield Static(id="status")
         yield Input(placeholder=DEFAULT_MINIBUFFER_PLACEHOLDER, id="minibuffer")
 
     def on_mount(self) -> None:
         self._hide_minibuffer()
-        self.query_one("#buffer", BufferView).focus()
+        self.query_one("#workspace", WorkspaceView).focus()
         self._refresh_view()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -145,7 +147,7 @@ class PyMACSTuiApp(App[None]):
         minibuffer.placeholder = DEFAULT_MINIBUFFER_PLACEHOLDER
         minibuffer.value = ""
         minibuffer.display = False
-        self.query_one("#buffer", BufferView).focus()
+        self.query_one("#workspace", WorkspaceView).focus()
 
     def _apply_ui_action(self) -> None:
         action = self.controller.pop_ui_action()
@@ -163,13 +165,61 @@ class PyMACSTuiApp(App[None]):
 
     def _refresh_view(self) -> None:
         snapshot = self.controller.snapshot()
-        buffer_widget = self.query_one("#buffer", Static)
+        workspace_widget = self.query_one("#workspace", Static)
         status_widget = self.query_one("#status", Static)
-        rendered = snapshot.text[: snapshot.cursor] + "|" + snapshot.text[snapshot.cursor :]
-        mode_text = ",".join(snapshot.modes) if snapshot.modes else "-"
-        buffer_widget.update(Text(rendered))
+
+        windows_by_id = {window.window_id: window for window in snapshot.windows}
+        workspace_widget.update(self._render_layout(snapshot.layout, windows_by_id))
         status_widget.update(
             Text(
-                f"[{snapshot.current_buffer}] line={snapshot.line} col={snapshot.col} modes={mode_text} | {snapshot.status}"
+                f"windows={len(snapshot.windows)} selected={snapshot.selected_window_id} | {snapshot.status}"
             )
+        )
+
+    def _render_layout(
+        self,
+        layout_node: LayoutSnapshot,
+        windows_by_id: dict[int, WindowSnapshot],
+    ) -> Layout:
+        if layout_node.kind == "window":
+            window_id = layout_node.window_id
+            if window_id is None:
+                return Layout(name="invalid", renderable=Text("invalid window"))
+            snapshot = windows_by_id.get(window_id)
+            if snapshot is None:
+                return Layout(name=f"window-{window_id}", renderable=Text("missing window"))
+            return Layout(name=f"window-{window_id}", renderable=self._render_window(snapshot))
+
+        root = Layout(name="split")
+        if layout_node.first is None or layout_node.second is None:
+            root.update(Text("invalid split"))
+            return root
+
+        first = self._render_layout(layout_node.first, windows_by_id)
+        second = self._render_layout(layout_node.second, windows_by_id)
+
+        if layout_node.axis == "below":
+            root.split_column(first, second)
+        else:
+            root.split_row(first, second)
+        return root
+
+    def _render_window(self, window: WindowSnapshot) -> Panel:
+        rendered_text = window.text[: window.cursor] + "|" + window.text[window.cursor :]
+        mode_text = ",".join(window.modes) if window.modes else "-"
+        local_status = Text(
+            f"[{window.buffer}] line={window.line} col={window.col} modes={mode_text}",
+            style="bold" if window.selected else "",
+        )
+
+        body = Layout(name=f"window-body-{window.window_id}")
+        body.split_column(
+            Layout(name="content", renderable=Text(rendered_text), ratio=1),
+            Layout(name="mode-line", renderable=local_status, size=1),
+        )
+        return Panel(
+            body,
+            title=f"Window {window.window_id}",
+            border_style="bright_green" if window.selected else "white",
+            padding=(0, 1),
         )

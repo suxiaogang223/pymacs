@@ -19,10 +19,10 @@ The first milestone delivers a programmable editor kernel.
 
 Single source of truth:
 
-1. Buffers and current buffer.
-2. Cursor positions.
+1. Buffers and window layout tree.
+2. Selected window and per-window point state.
 3. Editor variables/options.
-4. Future: windows, frames, keymaps.
+4. Future: frames and more advanced window management.
 
 ### 3.2 Command Bus
 
@@ -76,15 +76,24 @@ Single source of truth:
 1. Single default frontend is Textual TUI.
 2. `UIController` is the only adapter between TUI events and editor core APIs.
 3. Textual rendering reads immutable UI snapshots instead of touching `EditorState` directly.
-4. Delivered scope: single-buffer TUI, status line, minibuffer command input, Emacs-style baseline keybindings.
+4. Initial delivered scope was single-buffer TUI, status line, and minibuffer command input.
 
-### M5: Command Metadata and Help System (current)
+### M5: Command Metadata and Help System (done)
 
 1. Commands are self-documenting via docstring + runtime introspection.
 2. `Editor` exposes query APIs: command metadata, key description, and where-is lookup.
 3. Built-in help commands: `describe-command`, `describe-key`, `where-is`.
 4. Emacs-style help prefix in TUI: `C-h f`, `C-h k`, `C-h w`.
 5. Python remains the extension language for user config and plugins.
+
+### M6: Multi-Window and Multi-Buffer (current)
+
+1. Editor state uses a window split tree instead of a single global current buffer.
+2. Window commands are Emacs-aligned: split/select/delete window variants.
+3. Buffer commands use Emacs naming: `switch-to-buffer`, `list-buffers`, `kill-buffer`.
+4. Point memory is tracked by `window + buffer`.
+5. TUI renders recursive panes with per-window local status lines.
+6. Current implementation is single-frame only; multi-frame support is out of scope for M6.
 
 ## 5. Extension Contract (v0)
 

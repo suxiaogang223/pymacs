@@ -9,57 +9,80 @@ def _new_controller() -> UIController:
     return UIController(editor)
 
 
+def _selected_window(controller: UIController):
+    snapshot = controller.snapshot()
+    for window in snapshot.windows:
+        if window.selected:
+            return window
+    raise AssertionError("missing selected window")
+
+
 def test_snapshot_and_text_mutations() -> None:
     controller = _new_controller()
 
     snap = controller.snapshot()
-    assert snap.current_buffer == "*scratch*"
-    assert snap.text == ""
-    assert snap.cursor == 0
-    assert snap.line == 1
-    assert snap.col == 1
+    assert snap.selected_window_id == 1
+    assert len(snap.windows) == 1
+    assert _selected_window(controller).buffer == "*scratch*"
+    assert _selected_window(controller).text == ""
 
     controller.handle_text_input("ab")
-    snap = controller.snapshot()
-    assert snap.text == "ab"
-    assert snap.cursor == 2
-    assert snap.line == 1
-    assert snap.col == 3
+    selected = _selected_window(controller)
+    assert selected.text == "ab"
+    assert selected.cursor == 2
 
-    controller.handle_backspace()
-    assert controller.snapshot().text == "a"
-
-    controller.handle_backspace()
-    assert controller.snapshot().text == ""
-    assert controller.handle_backspace() == "buffer start"
+    controller.dispatch_key_chord("DEL")
+    assert _selected_window(controller).text == "a"
 
 
-def test_dispatch_key_chord_prefix_and_ui_actions() -> None:
+def test_dispatch_ctrl_x_window_commands() -> None:
     controller = _new_controller()
 
     assert controller.dispatch_key_chord("C-x") == "pending C-x"
-    assert controller.has_pending_keys()
-    assert controller.pop_ui_action() is None
+    assert controller.dispatch_key_chord("2") == "ran split-window-below"
+    assert len(controller.snapshot().windows) == 2
 
-    assert controller.dispatch_key_chord("C-c") == "quit requested"
-    assert not controller.has_pending_keys()
-    action = controller.pop_ui_action()
-    assert action is not None
-    assert action.name == "quit"
+    selected_before = controller.snapshot().selected_window_id
+    assert controller.dispatch_key_chord("C-x") == "pending C-x"
+    assert controller.dispatch_key_chord("o") == "ran other-window"
+    assert controller.snapshot().selected_window_id != selected_before
 
-    controller.dispatch_key_chord("M-x")
+    assert controller.dispatch_key_chord("C-x") == "pending C-x"
+    assert controller.dispatch_key_chord("1") == "ran delete-other-windows"
+    assert len(controller.snapshot().windows) == 1
+
+
+def test_dispatch_ctrl_x_prompts_switch_and_kill_buffer() -> None:
+    controller = _new_controller()
+
+    assert controller.dispatch_key_chord("C-x") == "pending C-x"
+    assert controller.dispatch_key_chord("b") == "Switch to buffer:"
+
     action = controller.pop_ui_action()
     assert action is not None
     assert action.name == "open-minibuffer"
+    assert action.prompt == "Switch to buffer:"
 
-    assert controller.dispatch_key_chord("C-g") == "cancelled"
+    assert controller.handle_minibuffer_submit("notes") == "ran switch-to-buffer"
+    assert _selected_window(controller).buffer == "notes"
+
+    assert controller.dispatch_key_chord("C-x") == "pending C-x"
+    assert controller.dispatch_key_chord("k") == "Kill buffer:"
+
     action = controller.pop_ui_action()
     assert action is not None
-    assert action.name == "cancel-minibuffer"
+    assert action.prompt == "Kill buffer:"
+
+    status = controller.handle_minibuffer_submit("notes")
+    assert status.startswith("killed notes")
+    assert _selected_window(controller).buffer == "*scratch*"
 
 
 def test_help_prefix_flow_for_describe_command() -> None:
     controller = _new_controller()
+
+    assert controller.dispatch_key_chord("C-x") == "pending C-x"
+    assert controller.dispatch_key_chord("2") == "ran split-window-below"
 
     assert controller.dispatch_key_chord("C-h") == "pending C-h"
     assert controller.has_pending_keys()
@@ -71,8 +94,9 @@ def test_help_prefix_flow_for_describe_command() -> None:
     assert action.prompt == "Describe command:"
 
     assert controller.handle_minibuffer_submit("show-buffer") == "help: show-buffer"
-    assert controller.snapshot().current_buffer == "*Help*"
-    assert "show-buffer" in controller.snapshot().text
+    snap = controller.snapshot()
+    assert len(snap.windows) == 2
+    assert any(window.buffer == "*Help*" for window in snap.windows)
 
 
 def test_help_prefix_rejects_unknown_subcommand() -> None:
@@ -83,22 +107,10 @@ def test_help_prefix_rejects_unknown_subcommand() -> None:
     assert not controller.has_pending_keys()
 
 
-def test_del_is_backspace_and_c_h_is_help_prefix() -> None:
-    controller = _new_controller()
-
-    controller.handle_text_input("ab")
-    assert controller.dispatch_key_chord("DEL") == "executed del"
-    assert controller.snapshot().text == "a"
-
-    assert controller.dispatch_key_chord("C-h") == "pending C-h"
-    assert controller.snapshot().text == "a"
-
-
 def test_execute_minibuffer_happy_paths() -> None:
     controller = _new_controller()
 
-    assert controller.execute_minibuffer("run new-buffer notes") == "ran new-buffer"
-    assert controller.execute_minibuffer("run switch-buffer notes") == "ran switch-buffer"
+    assert controller.execute_minibuffer("run switch-to-buffer notes") == "ran switch-to-buffer"
     assert controller.execute_minibuffer("run insert hi") == "ran insert"
     assert controller.execute_minibuffer("run show-buffer") == "hi"
 

@@ -37,10 +37,32 @@ Current default bindings include:
 - `C-d` / `DEL`: delete forward/backward char
 - `C-k`: kill line
 - `M-x`: minibuffer command input
+- `C-x 2` / `C-x 3`: split window below/right
+- `C-x o`: switch to other window
+- `C-x 0` / `C-x 1`: delete selected/other windows
+- `C-x b`: switch to buffer
+- `C-x C-b`: show buffer list
+- `C-x k`: kill buffer
 - `C-h f`: describe command
 - `C-h k`: describe key
 - `C-h w`: where-is (find bindings for command)
 - `C-x C-c` or `C-q`: quit
+
+## Multi-Window and Multi-Buffer
+
+PyMACS now uses an Emacs-style multi-window model:
+
+1. Window layout is a binary split tree (`C-x 2` / `C-x 3`).
+2. The selected window moves with `C-x o`.
+3. Each window remembers point per buffer (`window + buffer` memory).
+4. Help and buffer-list output prefer another window when one exists.
+5. Current scope is **single frame only** (no multi-frame support yet).
+
+Buffer management follows Emacs command naming:
+
+1. `switch-to-buffer`
+2. `list-buffers`
+3. `kill-buffer`
 
 ## Runtime Layers
 

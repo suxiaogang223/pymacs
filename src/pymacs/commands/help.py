@@ -83,5 +83,5 @@ def _format_scope(binding: KeyBindingInfo) -> str:
 
 def _show_help(editor: Editor, text: str) -> None:
     editor.state.buffers[HELP_BUFFER_NAME] = text
-    editor.state.cursors[HELP_BUFFER_NAME] = 0
-    editor.state.current_buffer = HELP_BUFFER_NAME
+    editor.state.mark_buffer_recent(HELP_BUFFER_NAME)
+    editor.pop_to_buffer(HELP_BUFFER_NAME, prefer_other=True)

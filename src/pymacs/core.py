@@ -137,7 +137,7 @@ class Editor:
             return
 
         if scope == "buffer":
-            target = buffer or self.state.current_buffer
+            target = buffer or self.state.selected_buffer()
             self.state.buffer_keymaps.setdefault(target, {})[key] = command_name
             return
 
@@ -150,13 +150,13 @@ class Editor:
         raise ValueError(f"unknown keymap scope: {scope}")
 
     def enable_mode(self, mode: str, *, buffer: str | None = None) -> None:
-        target = buffer or self.state.current_buffer
+        target = buffer or self.state.selected_buffer()
         modes = self.state.buffer_modes.setdefault(target, [])
         if mode not in modes:
             modes.append(mode)
 
     def disable_mode(self, mode: str, *, buffer: str | None = None) -> None:
-        target = buffer or self.state.current_buffer
+        target = buffer or self.state.selected_buffer()
         modes = self.state.buffer_modes.get(target)
         if not modes:
             return
@@ -168,7 +168,7 @@ class Editor:
 
     def describe_key(self, sequence: KeySequenceInput, *, buffer: str | None = None) -> KeyBindingInfo:
         key = parse_key_sequence(sequence)
-        target = buffer or self.state.current_buffer
+        target = buffer or self.state.selected_buffer()
 
         for scope, mode_name, target_buffer, keymap in self._active_keymaps(target):
             command_name = keymap.get(key)
@@ -188,7 +188,7 @@ class Editor:
         if name not in self._commands:
             raise KeyError(f"unknown command: {name}")
 
-        target = buffer or self.state.current_buffer
+        target = buffer or self.state.selected_buffer()
         bindings: list[KeyBindingInfo] = []
 
         for scope, mode_name, target_buffer, keymap in self._active_keymaps(target):
@@ -209,7 +209,7 @@ class Editor:
 
     def has_prefix_binding(self, sequence: KeySequenceInput, *, buffer: str | None = None) -> bool:
         key = parse_key_sequence(sequence)
-        target = buffer or self.state.current_buffer
+        target = buffer or self.state.selected_buffer()
 
         for _scope, _mode_name, _target_buffer, keymap in self._active_keymaps(target):
             for bound_sequence in keymap:
@@ -232,7 +232,41 @@ class Editor:
     def commands(self) -> list[str]:
         return sorted(self._commands)
 
-    def _active_keymaps(self, buffer: str) -> list[tuple[str, str | None, str | None, dict[KeySequence, str]]]:
+    @property
+    def selected_window_id(self) -> int:
+        return self.state.selected_window_id
+
+    def window_list(self) -> list[int]:
+        return self.state.window_list()
+
+    def window_buffer(self, window_id: int) -> str:
+        return self.state.window_buffer(window_id)
+
+    def set_window_buffer(self, window_id: int, buffer_name: str) -> None:
+        self.state.set_window_buffer(window_id, buffer_name)
+
+    def split_window_below(self) -> int:
+        return self.state.split_selected_window("below")
+
+    def split_window_right(self) -> int:
+        return self.state.split_selected_window("right")
+
+    def other_window(self) -> int:
+        return self.state.other_window()
+
+    def delete_window(self) -> int:
+        return self.state.delete_window()
+
+    def delete_other_windows(self) -> int:
+        return self.state.delete_other_windows()
+
+    def pop_to_buffer(self, buffer_name: str, *, prefer_other: bool = True) -> int:
+        return self.state.pop_to_buffer(buffer_name, prefer_other=prefer_other)
+
+    def _active_keymaps(
+        self,
+        buffer: str,
+    ) -> list[tuple[str, str | None, str | None, dict[KeySequence, str]]]:
         active: list[tuple[str, str | None, str | None, dict[KeySequence, str]]] = []
 
         for mode_name in reversed(self.state.buffer_modes.get(buffer, [])):
