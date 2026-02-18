@@ -72,8 +72,19 @@ class PyMACSTuiApp(App[None]):
         self.editor.command("ui-command-focus", self._cmd_focus_minibuffer)
         self.editor.command("ui-command-cancel", self._cmd_cancel_minibuffer)
         self.editor.bind_key("C-q", "ui-quit")
+        self.editor.bind_key("C-x C-c", "ui-quit")
         self.editor.bind_key("M-x", "ui-command-focus")
         self.editor.bind_key("C-g", "ui-command-cancel")
+        self.editor.bind_key("C-m", "newline")
+        self.editor.bind_key("C-h", "delete-backward-char")
+        self.editor.bind_key("C-d", "delete-forward-char")
+        self.editor.bind_key("C-f", "forward-char")
+        self.editor.bind_key("C-b", "backward-char")
+        self.editor.bind_key("C-a", "move-beginning-of-line")
+        self.editor.bind_key("C-e", "move-end-of-line")
+        self.editor.bind_key("C-n", "next-line")
+        self.editor.bind_key("C-p", "previous-line")
+        self.editor.bind_key("C-k", "kill-line")
 
     @property
     def quit_requested(self) -> bool:
@@ -106,13 +117,13 @@ class PyMACSTuiApp(App[None]):
             return
 
         if event.key == "enter":
-            self.controller.handle_text_input("\n")
+            self.controller.execute_key("C-m")
             self._refresh_view()
             event.stop()
             return
 
         if event.key == "backspace":
-            self.controller.handle_backspace()
+            self.controller.execute_key("C-h")
             self._refresh_view()
             event.stop()
             return
@@ -152,8 +163,15 @@ class PyMACSTuiApp(App[None]):
         snapshot = self.controller.snapshot()
         buffer_widget = self.query_one("#buffer", Static)
         status_widget = self.query_one("#status", Static)
+        cursor = self.editor.state.current_cursor()
+        rendered = snapshot.text[:cursor] + "|" + snapshot.text[cursor:]
+        line_start = snapshot.text.rfind("\n", 0, cursor) + 1
+        line = snapshot.text.count("\n", 0, cursor) + 1
+        col = cursor - line_start + 1
         mode_text = ",".join(snapshot.modes) if snapshot.modes else "-"
-        buffer_widget.update(Text(snapshot.text))
+        buffer_widget.update(Text(rendered))
         status_widget.update(
-            Text(f"[{snapshot.current_buffer}] modes={mode_text} | {snapshot.status}")
+            Text(
+                f"[{snapshot.current_buffer}] line={line} col={col} modes={mode_text} | {snapshot.status}"
+            )
         )

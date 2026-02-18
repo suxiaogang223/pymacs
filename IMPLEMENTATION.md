@@ -10,7 +10,8 @@ The first milestone delivers a programmable editor kernel.
 1. Runtime-first: editor behavior is mutable while running.
 2. Python-native: config and plugins are Python code.
 3. Small trusted core: state, command bus, hook bus, plugin loader.
-4. Incremental delivery: kernel -> shell -> text UI/GUI.
+4. Incremental delivery: kernel -> text UI -> optional GUI.
+5. Emacs-first keybindings: default key behavior should follow Emacs conventions so Emacs users can onboard with minimal relearning.
 
 ## 3. Core Runtime Architecture
 
@@ -68,6 +69,7 @@ Single source of truth:
 1. Key sequence parser.
 2. Keymap layering (global + buffer-local + mode-local).
 3. `command_execute` path.
+4. Compatibility target: prioritize Emacs-style default keybindings and interaction patterns.
 
 ### M4: UI Layer (current)
 
@@ -110,7 +112,13 @@ pymacs/
   src/
     pymacs/
       __init__.py
+      main.py
       state.py
       core.py
-      cli.py
+      keymap.py
+      commands.py
+      tui.py
+      ui/
+        app.py
+        controller.py
 ```

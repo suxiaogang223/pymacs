@@ -20,6 +20,7 @@ def test_tui_renders_initial_buffer() -> None:
             await pilot.pause()
             status = _plain_text(app.query_one("#status", Static))
             assert "*scratch*" in status
+            assert "line=1 col=1" in status
 
     asyncio.run(scenario())
 
@@ -30,7 +31,7 @@ def test_tui_typing_and_minibuffer_command() -> None:
         async with app.run_test() as pilot:
             await pilot.press("h", "i")
             await pilot.pause()
-            assert _plain_text(app.query_one("#buffer", Static)) == "hi"
+            assert _plain_text(app.query_one("#buffer", Static)) == "hi|"
 
             await pilot.press("alt+x")
             await pilot.pause()
@@ -44,6 +45,16 @@ def test_tui_typing_and_minibuffer_command() -> None:
             assert "hi" in status
 
     asyncio.run(scenario())
+
+
+def test_tui_has_emacs_default_bindings() -> None:
+    app = PyMACSTuiApp()
+    assert app.editor.resolve_key("C-f") == "forward-char"
+    assert app.editor.resolve_key("C-b") == "backward-char"
+    assert app.editor.resolve_key("C-a") == "move-beginning-of-line"
+    assert app.editor.resolve_key("C-e") == "move-end-of-line"
+    assert app.editor.resolve_key("C-k") == "kill-line"
+    assert app.editor.resolve_key("C-x C-c") == "ui-quit"
 
 
 def test_tui_ctrl_q_requests_quit() -> None:

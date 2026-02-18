@@ -22,6 +22,10 @@ def test_snapshot_and_text_mutations() -> None:
     controller.handle_backspace()
     assert controller.snapshot().text == "a"
 
+    controller.handle_backspace()
+    assert controller.snapshot().text == ""
+    assert controller.handle_backspace() == "buffer start"
+
 
 def test_execute_minibuffer_happy_paths() -> None:
     controller = _new_controller()

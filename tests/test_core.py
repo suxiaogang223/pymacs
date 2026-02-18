@@ -19,6 +19,42 @@ def test_builtin_commands_smoke() -> None:
     assert editor.run("get", "theme") == "dark"
 
 
+def test_emacs_style_cursor_editing_commands() -> None:
+    editor = Editor()
+    register_builtin_commands(editor)
+
+    editor.run("insert", "abc")
+    editor.run("backward-char")
+    editor.run("insert", "X")
+    assert editor.run("show-buffer") == "abXc"
+
+    editor.run("delete-backward-char")
+    assert editor.run("show-buffer") == "abc"
+
+    editor.run("move-beginning-of-line")
+    editor.run("delete-forward-char")
+    assert editor.run("show-buffer") == "bc"
+
+
+def test_line_navigation_and_kill_line() -> None:
+    editor = Editor()
+    register_builtin_commands(editor)
+
+    editor.run("insert", "abc")
+    editor.run("newline")
+    editor.run("insert", "def")
+
+    editor.run("previous-line")
+    editor.run("move-end-of-line")
+    editor.run("kill-line")
+    assert editor.run("show-buffer") == "abcdef"
+
+    editor.run("move-beginning-of-line")
+    editor.run("forward-char", "2")
+    editor.run("kill-line")
+    assert editor.run("show-buffer") == "ab"
+
+
 def test_hook_failure_isolated(caplog: pytest.LogCaptureFixture) -> None:
     editor = Editor()
 

@@ -42,10 +42,11 @@ class UIController:
         return self._set_status(f"inserted {len(text)} char(s)")
 
     def handle_backspace(self) -> str:
-        current = self.editor.state.current_text()
-        if not current:
+        before = self.editor.state.current_cursor()
+        self.editor.run("delete-backward-char")
+        after = self.editor.state.current_cursor()
+        if before == after:
             return self._set_status("buffer start")
-        self.editor.state.set_current_text(current[:-1])
         return self._set_status("backspace")
 
     def execute_key(self, sequence: str, *args: object) -> str:

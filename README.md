@@ -25,6 +25,20 @@ pymacs
 - `C-g` or `Esc`: cancel minibuffer
 - `C-q`: quit TUI
 
+## Keybinding Principle
+
+PyMACS follows an Emacs-first keybinding strategy. Default key behavior is designed to stay as close as practical to Emacs so existing Emacs users can use PyMACS with minimal relearning.
+
+Current default bindings include:
+
+- `C-f` / `C-b`: forward/backward char
+- `C-a` / `C-e`: beginning/end of line
+- `C-n` / `C-p`: next/previous line
+- `C-d` / `C-h`: delete forward/backward char
+- `C-k`: kill line
+- `M-x`: minibuffer command input
+- `C-x C-c` or `C-q`: quit
+
 For source-only development (without install):
 
 ```bash
