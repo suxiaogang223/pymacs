@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections import defaultdict
 from collections.abc import Callable
@@ -48,6 +49,8 @@ class Editor:
 
     def load_plugin(self, plugin_path: str) -> None:
         path = Path(plugin_path).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"plugin path does not exist: {path}")
         spec = spec_from_file_location(path.stem, path)
         if spec is None or spec.loader is None:
             raise RuntimeError(f"cannot load plugin from {path}")
@@ -56,9 +59,28 @@ class Editor:
         activate = getattr(module, "activate", None)
         if not callable(activate):
             raise TypeError(f"plugin {path} must define activate(editor)")
+        params = list(inspect.signature(activate).parameters.values())
+        if len(params) != 1:
+            raise TypeError(f"plugin {path} activate(editor) must accept exactly one argument")
         activate(self)
         self._plugins[str(path)] = module
+
+    def eval(self, code: str) -> object:
+        """Evaluate runtime Python with controlled globals and editor local."""
+
+        globals_scope = {"__builtins__": __builtins__}
+        locals_scope = {"editor": self}
+        try:
+            compiled = compile(code, "<pymacs-eval>", "eval")
+        except SyntaxError:
+            exec(compile(code, "<pymacs-eval>", "exec"), globals_scope, locals_scope)
+            return None
+        return eval(compiled, globals_scope, locals_scope)
 
     @property
     def commands(self) -> list[str]:
         return sorted(self._commands)
+
+    @property
+    def plugins(self) -> list[str]:
+        return sorted(self._plugins)

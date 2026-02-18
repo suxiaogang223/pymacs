@@ -54,21 +54,28 @@ def main() -> None:
         if raw == ":help":
             print("Commands:")
             print("  :commands                list command names")
+            print("  :plugins                 list loaded plugin paths")
             print("  :buf                     show current buffer name")
             print("  :run <cmd> [args...]     run command")
-            print("  :eval <python>           exec python with variable 'editor'")
+            print("  :eval <python>           eval/exec python with variable 'editor'")
             print("  :quit                    exit shell")
             continue
         if raw == ":commands":
             for name in editor.commands:
                 print(name)
             continue
+        if raw == ":plugins":
+            for path in editor.plugins:
+                print(path)
+            continue
         if raw == ":buf":
             print(editor.state.current_buffer)
             continue
         if raw.startswith(":eval "):
             code = raw[len(":eval ") :]
-            exec(code, {}, {"editor": editor})
+            result = editor.eval(code)
+            if result is not None:
+                print(result)
             continue
         if raw.startswith(":run "):
             parts = raw[len(":run ") :].split()
