@@ -71,12 +71,12 @@ Single source of truth:
 3. `command_execute` path.
 4. Compatibility target: prioritize Emacs-style default keybindings and interaction patterns.
 
-### M4: UI Layer (current)
+### M4: UI Layer (done)
 
-1. TUI prototype (Textual) first.
-2. Optional GUI path (PySide6).
-3. Rendering separated from editor core.
-4. Current scope: single-buffer TUI, status line, minibuffer command input.
+1. Single default frontend is Textual TUI.
+2. `UIController` is the only adapter between TUI events and editor core APIs.
+3. Textual rendering reads immutable UI snapshots instead of touching `EditorState` directly.
+4. Delivered scope: single-buffer TUI, status line, minibuffer command input, Emacs-style baseline keybindings.
 
 ## 5. Extension Contract (v0)
 

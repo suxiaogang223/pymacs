@@ -68,24 +68,6 @@ class PyMACSTuiApp(App[None]):
         self.controller = UIController(self.editor)
         self._quit_requested = False
 
-        self.editor.command("ui-quit", self._cmd_quit)
-        self.editor.command("ui-command-focus", self._cmd_focus_minibuffer)
-        self.editor.command("ui-command-cancel", self._cmd_cancel_minibuffer)
-        self.editor.bind_key("C-q", "ui-quit")
-        self.editor.bind_key("C-x C-c", "ui-quit")
-        self.editor.bind_key("M-x", "ui-command-focus")
-        self.editor.bind_key("C-g", "ui-command-cancel")
-        self.editor.bind_key("C-m", "newline")
-        self.editor.bind_key("C-h", "delete-backward-char")
-        self.editor.bind_key("C-d", "delete-forward-char")
-        self.editor.bind_key("C-f", "forward-char")
-        self.editor.bind_key("C-b", "backward-char")
-        self.editor.bind_key("C-a", "move-beginning-of-line")
-        self.editor.bind_key("C-e", "move-end-of-line")
-        self.editor.bind_key("C-n", "next-line")
-        self.editor.bind_key("C-p", "previous-line")
-        self.editor.bind_key("C-k", "kill-line")
-
     @property
     def quit_requested(self) -> bool:
         return self._quit_requested
@@ -105,53 +87,55 @@ class PyMACSTuiApp(App[None]):
             return
         self.controller.execute_minibuffer(event.value)
         self._hide_minibuffer()
+        self._apply_ui_action()
         self._refresh_view()
 
     def on_key(self, event: Key) -> None:
         minibuffer = self.query_one("#minibuffer", Input)
         if minibuffer.display:
             if event.key in {"escape", "ctrl+g"}:
-                self.controller.execute_key("C-g")
+                self.controller.dispatch_key_chord("C-g")
+                self._apply_ui_action()
                 self._refresh_view()
                 event.stop()
             return
 
         if event.key == "enter":
-            self.controller.execute_key("C-m")
+            self.controller.dispatch_key_chord("C-m")
+            self._apply_ui_action()
             self._refresh_view()
             event.stop()
             return
 
         if event.key == "backspace":
-            self.controller.execute_key("C-h")
+            self.controller.dispatch_key_chord("C-h")
+            self._apply_ui_action()
             self._refresh_view()
             event.stop()
             return
 
         sequence = _key_to_sequence(event.key)
         if sequence is not None:
-            self.controller.execute_key(sequence)
+            self.controller.dispatch_key_chord(sequence)
+            self._apply_ui_action()
             self._refresh_view()
             event.stop()
             return
 
         if event.character and event.character.isprintable():
-            self.controller.handle_text_input(event.character)
+            if self.controller.has_pending_keys():
+                self.controller.dispatch_key_chord(event.character)
+            else:
+                self.controller.handle_text_input(event.character)
+            self._apply_ui_action()
             self._refresh_view()
             event.stop()
 
-    def _cmd_quit(self, _editor: Editor) -> None:
-        self._quit_requested = True
-        self.exit()
-
-    def _cmd_focus_minibuffer(self, _editor: Editor) -> None:
+    def _show_minibuffer(self) -> None:
         minibuffer = self.query_one("#minibuffer", Input)
         minibuffer.display = True
         minibuffer.value = ""
         minibuffer.focus()
-
-    def _cmd_cancel_minibuffer(self, _editor: Editor) -> None:
-        self._hide_minibuffer()
 
     def _hide_minibuffer(self) -> None:
         minibuffer = self.query_one("#minibuffer", Input)
@@ -159,19 +143,29 @@ class PyMACSTuiApp(App[None]):
         minibuffer.display = False
         self.query_one("#buffer", BufferView).focus()
 
+    def _apply_ui_action(self) -> None:
+        action = self.controller.pop_ui_action()
+        if action is None:
+            return
+        if action == "open-minibuffer":
+            self._show_minibuffer()
+            return
+        if action == "cancel-minibuffer":
+            self._hide_minibuffer()
+            return
+        if action == "quit":
+            self._quit_requested = True
+            self.exit()
+
     def _refresh_view(self) -> None:
         snapshot = self.controller.snapshot()
         buffer_widget = self.query_one("#buffer", Static)
         status_widget = self.query_one("#status", Static)
-        cursor = self.editor.state.current_cursor()
-        rendered = snapshot.text[:cursor] + "|" + snapshot.text[cursor:]
-        line_start = snapshot.text.rfind("\n", 0, cursor) + 1
-        line = snapshot.text.count("\n", 0, cursor) + 1
-        col = cursor - line_start + 1
+        rendered = snapshot.text[: snapshot.cursor] + "|" + snapshot.text[snapshot.cursor :]
         mode_text = ",".join(snapshot.modes) if snapshot.modes else "-"
         buffer_widget.update(Text(rendered))
         status_widget.update(
             Text(
-                f"[{snapshot.current_buffer}] line={line} col={col} modes={mode_text} | {snapshot.status}"
+                f"[{snapshot.current_buffer}] line={snapshot.line} col={snapshot.col} modes={mode_text} | {snapshot.status}"
             )
         )

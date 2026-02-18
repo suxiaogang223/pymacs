@@ -39,6 +39,16 @@ Current default bindings include:
 - `M-x`: minibuffer command input
 - `C-x C-c` or `C-q`: quit
 
+## Runtime Layers
+
+PyMACS TUI now uses a strict three-layer boundary:
+
+1. Core (`src/pymacs/core.py`, `src/pymacs/state.py`): command bus, keymap resolution, mutable editor state.
+2. UI Controller (`src/pymacs/ui/controller.py`): translates UI events into editor commands and exposes immutable render snapshots.
+3. Textual App (`src/pymacs/ui/app.py`): widgets, focus, rendering, and platform event handling.
+
+The Textual App does not read `EditorState` directly. Rendering data comes from `UIController.snapshot()`.
+
 For source-only development (without install):
 
 ```bash

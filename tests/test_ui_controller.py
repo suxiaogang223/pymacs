@@ -15,9 +15,16 @@ def test_snapshot_and_text_mutations() -> None:
     snap = controller.snapshot()
     assert snap.current_buffer == "*scratch*"
     assert snap.text == ""
+    assert snap.cursor == 0
+    assert snap.line == 1
+    assert snap.col == 1
 
     controller.handle_text_input("ab")
-    assert controller.snapshot().text == "ab"
+    snap = controller.snapshot()
+    assert snap.text == "ab"
+    assert snap.cursor == 2
+    assert snap.line == 1
+    assert snap.col == 3
 
     controller.handle_backspace()
     assert controller.snapshot().text == "a"
@@ -25,6 +32,32 @@ def test_snapshot_and_text_mutations() -> None:
     controller.handle_backspace()
     assert controller.snapshot().text == ""
     assert controller.handle_backspace() == "buffer start"
+
+
+def test_dispatch_key_chord_prefix_and_ui_actions() -> None:
+    controller = _new_controller()
+
+    assert controller.dispatch_key_chord("C-x") == "pending C-x"
+    assert controller.has_pending_keys()
+    assert controller.pop_ui_action() is None
+
+    assert controller.dispatch_key_chord("C-c") == "quit requested"
+    assert not controller.has_pending_keys()
+    assert controller.pop_ui_action() == "quit"
+
+    assert controller.dispatch_key_chord("M-x") == "open minibuffer"
+    assert controller.pop_ui_action() == "open-minibuffer"
+
+    assert controller.dispatch_key_chord("C-g") == "cancelled"
+    assert controller.pop_ui_action() == "cancel-minibuffer"
+
+
+def test_dispatch_key_chord_clears_invalid_prefix() -> None:
+    controller = _new_controller()
+
+    assert controller.dispatch_key_chord("C-x") == "pending C-x"
+    assert controller.dispatch_key_chord("C-z") == "unbound key sequence: C-x C-z"
+    assert not controller.has_pending_keys()
 
 
 def test_execute_minibuffer_happy_paths() -> None:

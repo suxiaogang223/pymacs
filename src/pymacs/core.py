@@ -8,7 +8,7 @@ from collections.abc import Callable
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
-from .keymap import KeySequenceInput, format_key_sequence, parse_key_sequence
+from .keymap import KeySequence, KeySequenceInput, format_key_sequence, parse_key_sequence
 from .state import EditorState
 
 Command = Callable[..., object]
@@ -109,20 +109,24 @@ class Editor:
         key = parse_key_sequence(sequence)
         target = buffer or self.state.current_buffer
 
-        for mode in reversed(self.state.buffer_modes.get(target, [])):
-            command_name = self.state.mode_keymaps.get(mode, {}).get(key)
+        for keymap in self._active_keymaps(target):
+            command_name = keymap.get(key)
             if command_name is not None:
                 return command_name
 
-        command_name = self.state.buffer_keymaps.get(target, {}).get(key)
-        if command_name is not None:
-            return command_name
-
-        command_name = self.state.global_keymap.get(key)
-        if command_name is not None:
-            return command_name
-
         raise KeyError(f"unbound key sequence: {format_key_sequence(key)}")
+
+    def has_prefix_binding(self, sequence: KeySequenceInput, *, buffer: str | None = None) -> bool:
+        key = parse_key_sequence(sequence)
+        target = buffer or self.state.current_buffer
+
+        for keymap in self._active_keymaps(target):
+            for bound_sequence in keymap:
+                if len(bound_sequence) <= len(key):
+                    continue
+                if bound_sequence[: len(key)] == key:
+                    return True
+        return False
 
     def command_execute(
         self,
@@ -136,3 +140,11 @@ class Editor:
     @property
     def commands(self) -> list[str]:
         return sorted(self._commands)
+
+    def _active_keymaps(self, buffer: str) -> list[dict[KeySequence, str]]:
+        keymaps: list[dict[KeySequence, str]] = []
+        for mode in reversed(self.state.buffer_modes.get(buffer, [])):
+            keymaps.append(self.state.mode_keymaps.get(mode, {}))
+        keymaps.append(self.state.buffer_keymaps.get(buffer, {}))
+        keymaps.append(self.state.global_keymap)
+        return keymaps

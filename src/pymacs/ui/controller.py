@@ -6,6 +6,27 @@ import shlex
 from dataclasses import dataclass
 
 from ..core import Editor
+from ..keymap import KeySequence, format_key_sequence, parse_key_sequence
+
+DEFAULT_EDIT_BINDINGS: tuple[tuple[str, str], ...] = (
+    ("C-m", "newline"),
+    ("C-h", "delete-backward-char"),
+    ("C-d", "delete-forward-char"),
+    ("C-f", "forward-char"),
+    ("C-b", "backward-char"),
+    ("C-a", "move-beginning-of-line"),
+    ("C-e", "move-end-of-line"),
+    ("C-n", "next-line"),
+    ("C-p", "previous-line"),
+    ("C-k", "kill-line"),
+)
+
+UI_ACTION_BINDINGS: dict[KeySequence, str] = {
+    ("M-x",): "open-minibuffer",
+    ("C-g",): "cancel-minibuffer",
+    ("C-q",): "quit",
+    ("C-x", "C-c"): "quit",
+}
 
 
 @dataclass(frozen=True)
@@ -14,6 +35,9 @@ class UISnapshot:
 
     current_buffer: str
     text: str
+    cursor: int
+    line: int
+    col: int
     modes: tuple[str, ...]
     status: str
 
@@ -24,11 +48,22 @@ class UIController:
     def __init__(self, editor: Editor) -> None:
         self.editor = editor
         self._status = "ready"
+        self._pending_keys: list[str] = []
+        self._ui_action: str | None = None
+        self._bind_default_edit_keys()
 
     def snapshot(self) -> UISnapshot:
+        text = self.editor.state.current_text()
+        cursor = self.editor.state.current_cursor()
+        line_start = text.rfind("\n", 0, cursor) + 1
+        line = text.count("\n", 0, cursor) + 1
+        col = cursor - line_start + 1
         return UISnapshot(
             current_buffer=self.editor.state.current_buffer,
-            text=self.editor.state.current_text(),
+            text=text,
+            cursor=cursor,
+            line=line,
+            col=col,
             modes=tuple(self.editor.state.current_modes()),
             status=self._status,
         )
@@ -36,12 +71,16 @@ class UIController:
     def handle_text_input(self, text: str) -> str:
         if not text:
             return self._status
+        self._pending_keys.clear()
+        self._ui_action = None
         self.editor.run("insert", text)
         if text == "\n":
             return self._set_status("inserted newline")
         return self._set_status(f"inserted {len(text)} char(s)")
 
     def handle_backspace(self) -> str:
+        self._pending_keys.clear()
+        self._ui_action = None
         before = self.editor.state.current_cursor()
         self.editor.run("delete-backward-char")
         after = self.editor.state.current_cursor()
@@ -49,7 +88,30 @@ class UIController:
             return self._set_status("buffer start")
         return self._set_status("backspace")
 
+    def dispatch_key_chord(self, chord: str) -> str:
+        try:
+            sequence = parse_key_sequence(chord)
+        except ValueError as exc:
+            self._pending_keys.clear()
+            self._ui_action = None
+            return self._set_status(str(exc))
+
+        status = self._status
+        for key in sequence:
+            status = self._dispatch_single_key(key)
+        return status
+
+    def has_pending_keys(self) -> bool:
+        return bool(self._pending_keys)
+
+    def pop_ui_action(self) -> str | None:
+        action = self._ui_action
+        self._ui_action = None
+        return action
+
     def execute_key(self, sequence: str, *args: object) -> str:
+        self._pending_keys.clear()
+        self._ui_action = None
         try:
             result = self.editor.command_execute(sequence, *args)
         except KeyError as exc:
@@ -96,6 +158,38 @@ class UIController:
         except Exception as exc:
             return self._set_status(f"command error: {exc}")
 
+    def _dispatch_single_key(self, key: str) -> str:
+        if key == "C-g":
+            self._pending_keys.clear()
+            self._ui_action = "cancel-minibuffer"
+            return self._set_status("cancelled")
+
+        candidate = tuple([*self._pending_keys, key])
+        self._ui_action = None
+
+        action = UI_ACTION_BINDINGS.get(candidate)
+        if action is not None:
+            self._pending_keys.clear()
+            self._ui_action = action
+            return self._set_status(self._action_status(action))
+
+        try:
+            command_name = self.editor.resolve_key(candidate)
+        except KeyError:
+            command_name = None
+
+        if command_name is not None:
+            self._pending_keys.clear()
+            return self.execute_key(format_key_sequence(candidate))
+
+        has_prefix = self.editor.has_prefix_binding(candidate) or self._has_ui_prefix(candidate)
+        if has_prefix:
+            self._pending_keys = list(candidate)
+            return self._set_status(f"pending {format_key_sequence(candidate)}")
+
+        self._pending_keys.clear()
+        return self._set_status(f"unbound key sequence: {format_key_sequence(candidate)}")
+
     def _run_command(self, args: list[str]) -> str:
         if not args:
             return self._set_status("usage: run <cmd> [args...]")
@@ -135,7 +229,9 @@ class UIController:
         if not args:
             return self._set_status("usage: press <key> [args...]")
         key, rest = args[0], args[1:]
-        return self.execute_key(key, *rest)
+        if rest:
+            return self.execute_key(key, *rest)
+        return self.dispatch_key_chord(key)
 
     def _mode_command(self, args: list[str]) -> str:
         if not args:
@@ -153,3 +249,33 @@ class UIController:
     def _set_status(self, message: str) -> str:
         self._status = message
         return message
+
+    def _bind_default_edit_keys(self) -> None:
+        for sequence, command_name in DEFAULT_EDIT_BINDINGS:
+            try:
+                key = parse_key_sequence(sequence)
+            except ValueError:
+                continue
+            if key in self.editor.state.global_keymap:
+                continue
+            try:
+                self.editor.bind_key(key, command_name, scope="global")
+            except KeyError:
+                continue
+
+    def _has_ui_prefix(self, sequence: KeySequence) -> bool:
+        for bound in UI_ACTION_BINDINGS:
+            if len(bound) <= len(sequence):
+                continue
+            if bound[: len(sequence)] == sequence:
+                return True
+        return False
+
+    def _action_status(self, action: str) -> str:
+        if action == "open-minibuffer":
+            return "open minibuffer"
+        if action == "cancel-minibuffer":
+            return "cancelled"
+        if action == "quit":
+            return "quit requested"
+        return action

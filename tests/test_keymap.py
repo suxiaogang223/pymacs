@@ -57,3 +57,13 @@ def test_unbound_key_sequence_raises() -> None:
     editor = Editor()
     with pytest.raises(KeyError, match="unbound key sequence"):
         editor.command_execute("C-z")
+
+
+def test_has_prefix_binding() -> None:
+    editor = Editor()
+    editor.command("quit", lambda _ed: None)
+    editor.bind_key("C-x C-c", "quit")
+
+    assert editor.has_prefix_binding("C-x")
+    assert not editor.has_prefix_binding("C-x C-c")
+    assert not editor.has_prefix_binding("C-z")
