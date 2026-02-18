@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shlex
+
 from .core import Editor
 
 
@@ -35,6 +37,79 @@ def _register_builtin_commands(editor: Editor) -> None:
     editor.command("get", get_var)
 
 
+def _print_help() -> None:
+    print("Commands:")
+    print("  :commands                list command names")
+    print("  :buf                     show current buffer name")
+    print("  :run <cmd> [args...]     run command")
+    print("  :eval <python>           exec python with variable 'editor'")
+    print("  :quit                    exit shell")
+
+
+def _run_command(editor: Editor, payload: str) -> None:
+    try:
+        parts = shlex.split(payload)
+    except ValueError as exc:
+        print(f"parse error: {exc}")
+        return
+
+    if not parts:
+        print("usage: :run <cmd> [args...]")
+        return
+
+    name, args = parts[0], parts[1:]
+    try:
+        result = editor.run(name, *args)
+    except KeyError as exc:
+        print(exc.args[0])
+        return
+    except Exception as exc:
+        print(f"command error: {exc}")
+        return
+
+    if result is not None:
+        print(result)
+
+
+def _eval_code(editor: Editor, payload: str) -> None:
+    try:
+        exec(payload, {}, {"editor": editor})
+    except Exception as exc:
+        print(f"eval error: {exc}")
+
+
+def _handle_input(editor: Editor, raw: str) -> bool:
+    if not raw:
+        return True
+    if raw in {":q", ":quit", ":exit"}:
+        return False
+    if raw == ":help":
+        _print_help()
+        return True
+    if raw == ":commands":
+        for name in editor.commands:
+            print(name)
+        return True
+    if raw == ":buf":
+        print(editor.state.current_buffer)
+        return True
+    if raw == ":run":
+        print("usage: :run <cmd> [args...]")
+        return True
+    if raw.startswith(":run "):
+        _run_command(editor, raw[len(":run ") :])
+        return True
+    if raw == ":eval":
+        print("usage: :eval <python>")
+        return True
+    if raw.startswith(":eval "):
+        _eval_code(editor, raw[len(":eval ") :])
+        return True
+
+    print("unknown input. use :help")
+    return True
+
+
 def main() -> None:
     editor = Editor()
     _register_builtin_commands(editor)
@@ -47,38 +122,8 @@ def main() -> None:
             print()
             break
 
-        if not raw:
-            continue
-        if raw in {":q", ":quit", ":exit"}:
+        if not _handle_input(editor, raw):
             break
-        if raw == ":help":
-            print("Commands:")
-            print("  :commands                list command names")
-            print("  :buf                     show current buffer name")
-            print("  :run <cmd> [args...]     run command")
-            print("  :eval <python>           exec python with variable 'editor'")
-            print("  :quit                    exit shell")
-            continue
-        if raw == ":commands":
-            for name in editor.commands:
-                print(name)
-            continue
-        if raw == ":buf":
-            print(editor.state.current_buffer)
-            continue
-        if raw.startswith(":eval "):
-            code = raw[len(":eval ") :]
-            exec(code, {}, {"editor": editor})
-            continue
-        if raw.startswith(":run "):
-            parts = raw[len(":run ") :].split()
-            name, args = parts[0], parts[1:]
-            result = editor.run(name, *args)
-            if result is not None:
-                print(result)
-            continue
-
-        print("unknown input. use :help")
 
 
 if __name__ == "__main__":
