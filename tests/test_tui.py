@@ -29,6 +29,19 @@ def _collect_panels(layout: Layout) -> list[Panel]:
     return []
 
 
+def _panel_contents(layout: Layout) -> list[tuple[str, str]]:
+    entries: list[tuple[str, str]] = []
+    for panel in _collect_panels(layout):
+        body = panel.renderable
+        if not isinstance(body, Layout):
+            continue
+        content = next((child for child in body.children if child.name == "content"), None)
+        if content is None:
+            continue
+        entries.append((str(panel.border_style), str(content.renderable)))
+    return entries
+
+
 def test_tui_renders_initial_workspace() -> None:
     async def scenario() -> None:
         app = PyMACSTuiApp()
@@ -154,6 +167,62 @@ def test_tui_help_prefers_other_window_when_available() -> None:
             assert selected_after.window_id == selected_before
             assert selected_after.buffer != "*Help*"
             assert any(window.buffer == "*Help*" for window in snapshot.windows)
+
+    asyncio.run(scenario())
+
+
+def test_tui_cursor_format_applies_to_selected_window_only() -> None:
+    async def scenario() -> None:
+        app = PyMACSTuiApp()
+        async with app.run_test() as pilot:
+            await pilot.press("h", "i")
+            await pilot.press("ctrl+x", "2")
+            await pilot.pause()
+
+            app.controller.execute_minibuffer("run set cursor.format []")
+            app._refresh_view()
+            await pilot.pause()
+
+            workspace = app.query_one("#workspace", Static)
+            assert isinstance(workspace.renderable, Layout)
+            contents = _panel_contents(workspace.renderable)
+            selected = [text for style, text in contents if style == "bright_green"]
+            unselected = [text for style, text in contents if style != "bright_green"]
+
+            assert selected == ["hi[]"]
+            assert unselected == ["hi"]
+
+    asyncio.run(scenario())
+
+
+def test_tui_default_cursor_styles_char_without_inserting_marker() -> None:
+    async def scenario() -> None:
+        app = PyMACSTuiApp()
+        async with app.run_test() as pilot:
+            await pilot.press("h", "i", "ctrl+b")
+            await pilot.pause()
+
+            workspace = app.query_one("#workspace", Static)
+            assert isinstance(workspace.renderable, Layout)
+            contents = _panel_contents(workspace.renderable)
+            selected = [text for style, text in contents if style == "bright_green"]
+
+            assert selected == ["hi"]
+            assert "|" not in selected[0]
+
+    asyncio.run(scenario())
+
+
+def test_tui_invalid_cursor_style_shows_fallback_warning() -> None:
+    async def scenario() -> None:
+        app = PyMACSTuiApp()
+        async with app.run_test() as pilot:
+            app.controller.execute_minibuffer("run set cursor.style definitely-invalid-style")
+            app._refresh_view()
+            await pilot.pause()
+
+            status = str(app.query_one("#status", Static).renderable)
+            assert "invalid cursor.style; fallback to reverse blink" in status
 
     asyncio.run(scenario())
 

@@ -64,6 +64,17 @@ Buffer management follows Emacs command naming:
 2. `list-buffers`
 3. `kill-buffer`
 
+## Cursor Customization
+
+TUI cursor rendering is configurable through runtime variables:
+
+1. `run set cursor.format char` uses Emacs-like block behavior (style current char).
+2. `run set cursor.format []` switches to insertion marker mode.
+3. `run set cursor.style bold red` sets the Rich style for the cursor.
+4. Defaults are `cursor.format = char` and `cursor.style = reverse blink`.
+5. Invalid values fall back safely (`char` / `reverse blink`) and show a status warning.
+6. `blink` visibility depends on terminal support and local terminal settings.
+
 ## Runtime Layers
 
 PyMACS TUI now uses a strict three-layer boundary:

@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from ..core import Editor
 from ..keymap import KeySequence, format_key_sequence, parse_key_sequence
 
+# `char` means "render cursor by styling current character", emulating Emacs block cursor.
+DEFAULT_CURSOR_FORMAT = "char"
+DEFAULT_CURSOR_STYLE = "reverse blink"
+
 DEFAULT_EDIT_BINDINGS: tuple[tuple[str, str], ...] = (
     ("C-m", "newline"),
     ("DEL", "delete-backward-char"),
@@ -81,6 +85,9 @@ class UISnapshot:
     selected_window_id: int
     windows: tuple[WindowSnapshot, ...]
     layout: LayoutSnapshot
+    cursor_format: str
+    cursor_style: str
+    cursor_warning: str | None
     status: str
 
 
@@ -106,6 +113,7 @@ class UIController:
     def snapshot(self) -> UISnapshot:
         windows: list[WindowSnapshot] = []
         selected_window_id = self.editor.selected_window_id
+        cursor_format, cursor_style, cursor_warning = self._cursor_config()
 
         for window_id in self.editor.window_list():
             buffer_name = self.editor.window_buffer(window_id)
@@ -132,6 +140,9 @@ class UIController:
             selected_window_id=selected_window_id,
             windows=tuple(windows),
             layout=self._layout_from_tree(self.editor.state.layout_tree()),
+            cursor_format=cursor_format,
+            cursor_style=cursor_style,
+            cursor_warning=cursor_warning,
             status=self._status,
         )
 
@@ -470,3 +481,19 @@ class UIController:
         first = self._layout_from_tree(tree[2])
         second = self._layout_from_tree(tree[3])
         return LayoutSnapshot(kind="split", axis=axis, first=first, second=second)
+
+    def _cursor_config(self) -> tuple[str, str, str | None]:
+        raw_format = self.editor.state.variables.get("cursor.format", DEFAULT_CURSOR_FORMAT)
+        raw_style = self.editor.state.variables.get("cursor.style", DEFAULT_CURSOR_STYLE)
+
+        cursor_format = str(raw_format)
+        cursor_style = str(raw_style)
+
+        if cursor_format:
+            return cursor_format, cursor_style, None
+
+        return (
+            DEFAULT_CURSOR_FORMAT,
+            cursor_style,
+            f"invalid cursor.format; fallback to {DEFAULT_CURSOR_FORMAT}",
+        )

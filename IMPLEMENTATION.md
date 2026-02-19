@@ -94,6 +94,7 @@ Single source of truth:
 4. Point memory is tracked by `window + buffer`.
 5. TUI renders recursive panes with per-window local status lines.
 6. Current implementation is single-frame only; multi-frame support is out of scope for M6.
+7. Cursor rendering is configurable via runtime vars (`cursor.format`, `cursor.style`) with safe fallback behavior.
 
 ## 5. Extension Contract (v0)
 

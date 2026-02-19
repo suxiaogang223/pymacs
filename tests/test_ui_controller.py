@@ -23,6 +23,9 @@ def test_snapshot_and_text_mutations() -> None:
     snap = controller.snapshot()
     assert snap.selected_window_id == 1
     assert len(snap.windows) == 1
+    assert snap.cursor_format == "char"
+    assert snap.cursor_style == "reverse blink"
+    assert snap.cursor_warning is None
     assert _selected_window(controller).buffer == "*scratch*"
     assert _selected_window(controller).text == ""
 
@@ -33,6 +36,22 @@ def test_snapshot_and_text_mutations() -> None:
 
     controller.dispatch_key_chord("DEL")
     assert _selected_window(controller).text == "a"
+
+
+def test_cursor_config_custom_and_fallback() -> None:
+    controller = _new_controller()
+
+    assert controller.execute_minibuffer("run set cursor.format []") == "ran set"
+    assert controller.execute_minibuffer("run set cursor.style bold red") == "ran set"
+    snap = controller.snapshot()
+    assert snap.cursor_format == "[]"
+    assert snap.cursor_style == "bold red"
+    assert snap.cursor_warning is None
+
+    assert controller.execute_minibuffer("run set cursor.format") == "ran set"
+    fallback = controller.snapshot()
+    assert fallback.cursor_format == "char"
+    assert fallback.cursor_warning == "invalid cursor.format; fallback to char"
 
 
 def test_dispatch_ctrl_x_window_commands() -> None:
